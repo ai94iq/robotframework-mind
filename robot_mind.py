@@ -43,6 +43,20 @@ class Entry:
     refs: list[str] = field(default_factory=list)     # normalized variable names used in the body
 
 
+@dataclass
+class Hit:
+    """One lookup result, shaped for both the CLI and the desktop app."""
+    kind: str
+    name: str
+    file: str
+    line: int = 0          # the entry's own line
+    tags: list[str] = field(default_factory=list)
+    args: str = ""
+    doc: str = ""
+    value: str = ""
+    call_line: int = 0      # call-site line for callers hits, 0 otherwise
+
+
 def norm(name: str) -> str:
     """Robot matches keyword names case-, space- and underscore-insensitively."""
     return name.lower().replace(" ", "").replace("_", "")
@@ -321,12 +335,23 @@ SUFFIX = {
 }
 
 
-def fmt(e: Entry, line: int | None = None) -> str:
+def fmt_hit(h: Hit) -> str:
     """One line per hit; a call-site line (callers) prints the location only."""
-    at = line or e.line
-    loc = f"{e.file}:{at}" if at else e.file
-    head = "  ".join(part for part in (e.kind, e.name, loc) if part)
-    return strip_controls(head if line else head + SUFFIX.get(e.kind, lambda _: "")(e))
+    at = h.call_line or h.line
+    loc = f"{h.file}:{at}" if at else h.file
+    head = "  ".join(part for part in (h.kind, h.name, loc) if part)
+    return strip_controls(head if h.call_line else head + SUFFIX.get(h.kind, lambda _: "")(h))
+
+
+def query(root: Path, command: str, term: str, cache_dir: Path | None = None) -> list[Hit]:
+    """Structured hits for one lookup; the shared entry point for the CLI and the desktop app."""
+    entries = load_index(root, cache_dir or Path.home() / ".cache" / "robotframework-mind")
+    if command == "callers":
+        return [Hit(e.kind, e.name, e.file, e.line, e.tags, e.args, e.doc, e.value, line)
+                for e, line in q_callers(entries, term)]
+    fn = {"ticket": q_ticket, "kw": q_kw, "tag": q_tag, "find": q_find}[command]
+    return [Hit(e.kind, e.name, e.file, e.line, e.tags, e.args, e.doc, e.value)
+            for e in fn(entries, term)]
 
 
 def run(argv: list[str], root: Path | None = None, cache_dir: Path | None = None) -> str:
@@ -337,16 +362,10 @@ def run(argv: list[str], root: Path | None = None, cache_dir: Path | None = None
     p.add_argument("--limit", type=int, default=20)
     p.add_argument("--json", action="store_true", help="print hits as a JSON array")
     a = p.parse_args(argv)
-    entries = load_index(a.root, cache_dir or Path.home() / ".cache" / "robotframework-mind")
-    if a.command == "callers":
-        hits = [(e, line) for e, line in q_callers(entries, a.term)]
-    else:
-        query = {"ticket": q_ticket, "kw": q_kw, "tag": q_tag, "find": q_find}[a.command]
-        hits = [(e, None) for e in query(entries, a.term)]
+    hits = query(a.root, a.command, a.term, cache_dir=cache_dir)
     if a.json:
-        out = [asdict(e) | ({"call_line": line} if line else {}) for e, line in hits[: a.limit]]
-        return json.dumps(out, ensure_ascii=False)
-    lines = [fmt(e, line) for e, line in hits]
+        return json.dumps([asdict(h) for h in hits[: a.limit]], ensure_ascii=False)
+    lines = [fmt_hit(h) for h in hits]
     if not lines:
         return "no match"
     extra = len(lines) - a.limit
