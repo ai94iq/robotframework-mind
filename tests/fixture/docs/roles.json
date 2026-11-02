@@ -1,0 +1,7 @@
+{
+  "endpoints": {
+    "POST /api/items/query": {"group": "items", "results": {"apikey:PARTNER": {"status": 403, "verdict": "denied"}, "role_team_lead": {"status": 200, "verdict": "allowed"}}},
+    "GET /api/zones/list": {"group": "zones", "results": {"apikey:PARTNER": {"status": 200, "verdict": "allowed"}}}
+  },
+  "principals": ["apikey:PARTNER", "role_team_lead"]
+}

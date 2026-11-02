@@ -1,0 +1,9 @@
+robotframework-mind
+
+Inspired by graphify (https://github.com/Graphify-Labs/graphify),
+Copyright (c) 2026 Safi Shamsi, licensed under the Apache License 2.0.
+
+The Robot Framework parsing approach (robot.api ModelVisitor over the
+suite and resource models, keyword names normalized case-, space- and
+underscore-insensitively) follows graphify's extractors/robot.py.
+No source code from graphify is included in this repository.
