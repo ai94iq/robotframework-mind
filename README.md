@@ -8,7 +8,7 @@ It indexes:
 
 - tests: name, tags (`bug:PROJ-123`, `role:...`, `op:GET /api/...`), first doc line, keyword calls
 - user keywords: name, arguments, first doc line, calls, variables used
-- variables from `*** Variables ***`, with their values
+- variables from `*** Variables ***` and inline `VAR` statements, with their values
 - suite and test setup/teardown calls
 - JSON files under `docs/`, one entry per object key
 
@@ -33,11 +33,13 @@ python path/to/robot_mind.py --root <repo> find /api/items/query
 |---|---|
 | `ticket KEY` | tests and keywords whose tags, name or doc mention the key |
 | `kw NAME` | every definition, matched the way Robot matches names (case, spaces and underscores ignored) |
-| `callers NAME` | each call site: keyword, test or suite fixture, at the call line |
+| `callers NAME` | each call site: keyword, test or suite fixture, at the call line; falls back to substring when no exact name matches |
 | `tag TAG` | tests with that tag; `role:*` matches a prefix |
 | `find TEXT` | names, tags, docs, args, values and JSON entries containing the text, then the keywords that use a matching variable |
 
-`--limit N` caps the lines (default 20). No hit prints `no match`.
+`--limit N` caps the lines (default 20). No hit prints `no match`. `--json`
+prints the hits as a JSON array (each with `kind`, `name`, `file`, `line`; a
+`callers` hit also carries `call_line`).
 
 ## How it stays current
 

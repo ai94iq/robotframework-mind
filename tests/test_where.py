@@ -1,4 +1,5 @@
 """Behavior tests: call the CLI the way a script does and check the lines it prints."""
+import json
 import shutil
 import subprocess
 import tempfile
@@ -121,6 +122,26 @@ class WhereTests(unittest.TestCase):
         self.assertIn("No Own Tags", out)
         self.assertNotIn("Has Own Tags", out)
         self.assertIn("own:yes", self.where("tag", "own:yes"))
+
+    def test_find_matches_inline_var(self):
+        out = self.where("find", "/api/inline/query")
+        self.assertIn("var  ${END_INLINE}", out)
+        self.assertIn("test  Inline Var Test", out)
+
+    def test_callers_falls_back_to_substring_when_no_exact(self):
+        out = self.where("callers", "Authenticated")
+        self.assertIn("Open Cases Page", out)
+
+    def test_find_suppresses_error_entries(self):
+        self.assertEqual(self.where("find", "JSONDecodeError").strip(), "no match")
+
+    def test_json_flag_prints_structured_hits(self):
+        data = json.loads(self.where("find", "/api/items/query", "--json"))
+        self.assertIsInstance(data, list)
+        kinds = {d["kind"] for d in data}
+        self.assertIn("var", kinds)
+        self.assertIn("keyword", kinds)
+        self.assertTrue(all("file" in d and "line" in d for d in data))
 
     def test_no_match_says_so(self):
         self.assertEqual(self.where("ticket", "PROJ-9999").strip(), "no match")

@@ -107,6 +107,10 @@ def parse_robot(path: Path, rel: str) -> list[Entry]:
             if node.name:
                 entries.append(Entry("var", node.name, rel, node.lineno, value=" ".join(node.value)))
 
+        def visit_Var(self, node):
+            if node.name:
+                entries.append(Entry("var", node.name, rel, node.lineno, value=" ".join(node.value)))
+
         def visit_KeywordCall(self, node):
             if self.scope and node.keyword:
                 self.scope.calls.append([node.keyword, node.lineno])
@@ -261,7 +265,8 @@ def q_kw(entries, term):
 
 def q_callers(entries, term):
     target = norm(term)
-    return [(e, line) for e in entries for name, line in e.calls if norm(name) == target]
+    exact = [(e, line) for e in entries for name, line in e.calls if norm(name) == target]
+    return exact or [(e, line) for e in entries for name, line in e.calls if target in norm(name)]
 
 
 def q_tag(entries, term):
@@ -279,7 +284,8 @@ def find_rank(e: Entry, t: str) -> int | None:
 
 def q_find(entries, term):
     t = term.lower()
-    ranked = sorted(((r, i, e) for i, e in enumerate(entries) if (r := find_rank(e, t)) is not None),
+    ranked = sorted(((r, i, e) for i, e in enumerate(entries)
+                     if e.kind != "error" and (r := find_rank(e, t)) is not None),
                     key=lambda x: (x[0], x[1]))
     hits = [e for _, _, e in ranked]
     hit_ids = {id(e) for e in hits}
@@ -315,13 +321,18 @@ def run(argv: list[str], root: Path | None = None, cache_dir: Path | None = None
     p.add_argument("command", choices=["ticket", "kw", "callers", "tag", "find"])
     p.add_argument("term")
     p.add_argument("--limit", type=int, default=20)
+    p.add_argument("--json", action="store_true", help="print hits as a JSON array")
     a = p.parse_args(argv)
     entries = load_index(a.root, cache_dir or Path.home() / ".cache" / "robotframework-mind")
     if a.command == "callers":
-        lines = [fmt(e, line) for e, line in q_callers(entries, a.term)]
+        hits = [(e, line) for e, line in q_callers(entries, a.term)]
     else:
         query = {"ticket": q_ticket, "kw": q_kw, "tag": q_tag, "find": q_find}[a.command]
-        lines = [fmt(e) for e in query(entries, a.term)]
+        hits = [(e, None) for e in query(entries, a.term)]
+    if a.json:
+        out = [asdict(e) | ({"call_line": line} if line else {}) for e, line in hits[: a.limit]]
+        return json.dumps(out, ensure_ascii=False)
+    lines = [fmt(e, line) for e, line in hits]
     if not lines:
         return "no match"
     extra = len(lines) - a.limit
