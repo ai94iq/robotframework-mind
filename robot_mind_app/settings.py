@@ -48,7 +48,13 @@ class AppSettings:
         self.s.setValue("editor", command)
 
 
+def _unquote(token: str) -> str:
+    if len(token) >= 2 and token[0] == token[-1] and token[0] in ("'", '"'):
+        return token[1:-1]
+    return token
+
+
 def open_in_editor(file: str, line: int, command: str = DEFAULT_EDITOR) -> list[str]:
     """The argv that opens `file` at `line`; the caller runs it (no shell, so spaces in a path are safe)."""
-    parts = shlex.split(command, posix=False)
+    parts = [_unquote(part) for part in shlex.split(command, posix=False)]
     return [part.replace("{file}", file).replace("{line}", str(line)) for part in parts]

@@ -131,6 +131,11 @@ class LookupTest(unittest.TestCase):
         self.assertEqual(open_in_editor("a b.robot", 12, "code --goto {file}:{line}"),
                          ["code", "--goto", "a b.robot:12"])
 
+    def test_open_in_editor_unquotes_a_configured_path(self):
+        from robot_mind_app.settings import open_in_editor
+        argv = open_in_editor("a b.robot", 12, '"C:/Program Files/Code/code.exe" --goto {file}:{line}')
+        self.assertEqual(argv, ["C:/Program Files/Code/code.exe", "--goto", "a b.robot:12"])
+
     def test_tag_filter_narrows_results(self):
         from robot_mind import Hit
         hits = [Hit("test", "T1", "a.robot", 1, tags=["role:admin"]),
