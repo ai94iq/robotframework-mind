@@ -1,0 +1,28 @@
+[build-system]
+requires = ["setuptools>=80"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "robotframework-mind"
+dynamic = ["version"]
+description = "Exact lookups over a Robot Framework test repo: CLI and desktop UI"
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = ["robotframework>=7"]
+
+[project.optional-dependencies]
+gui = ["PySide6-Essentials>=6.12.0"]
+dev = ["pytest>=9"]
+
+[project.gui-scripts]
+robot-mind-gui = "robot_mind_app.__main__:main"
+
+[tool.setuptools.dynamic]
+version = { attr = "robot_mind_app.__version__" }
+
+[tool.setuptools]
+py-modules = ["robot_mind"]
+packages = ["robot_mind_app"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
