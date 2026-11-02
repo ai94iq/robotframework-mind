@@ -116,6 +116,44 @@ class LookupTest(unittest.TestCase):
         hits = engine.query(self.root, "kw", "Open Profile Browser", cache_dir=self.tmp / "cache")
         self.assertTrue(any(h.name == "Open Profile Browser" for h in hits))
 
+    def test_saved_repo_persists(self):
+        from robot_mind_app.settings import AppSettings
+        AppSettings(self.settings).add_repo("C:/repos/a")
+        self.assertIn("C:/repos/a", AppSettings(self.settings).repos())
+
+    def test_history_records_a_query(self):
+        from robot_mind_app.settings import AppSettings
+        AppSettings(self.settings).add_history("ticket", "PROJ-1")
+        self.assertEqual(AppSettings(self.settings).history()[0], ("ticket", "PROJ-1"))
+
+    def test_open_in_editor_builds_an_argv_without_a_shell(self):
+        from robot_mind_app.settings import open_in_editor
+        self.assertEqual(open_in_editor("a b.robot", 12, "code --goto {file}:{line}"),
+                         ["code", "--goto", "a b.robot:12"])
+
+    def test_tag_filter_narrows_results(self):
+        from robot_mind import Hit
+        hits = [Hit("test", "T1", "a.robot", 1, tags=["role:admin"]),
+                Hit("test", "T2", "a.robot", 2, tags=["role:guest"])]
+        self.window.set_results(hits)
+        self.window.filter.setText("role:admin")
+        self.assertFalse(self.window.results.isRowHidden(0))
+        self.assertTrue(self.window.results.isRowHidden(1))
+
+    def test_copy_selected_puts_the_hit_on_the_clipboard(self):
+        from robot_mind import Hit
+        self.window.set_results([Hit("keyword", "Open X", "a.robot", 7)])
+        self.window.results.selectRow(0)
+        self.window.copy_selected()
+        self.assertIn("Open X", QApplication.clipboard().text())
+
+    def test_history_records_a_search(self):
+        from robot_mind_app.settings import AppSettings
+        self.window.command.setCurrentText("kw")
+        self.window.term.setText("Open Profile Browser")
+        self.window.search()
+        self.assertEqual(AppSettings(self.settings).history()[0], ("kw", "Open Profile Browser"))
+
 
 if __name__ == "__main__":
     unittest.main()

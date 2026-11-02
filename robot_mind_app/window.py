@@ -1,16 +1,19 @@
-"""Main window: repo picker, a command/term query bar, and a results table."""
+"""Main window: repo picker, a command/term query bar, a results table, and the fuller features."""
+import subprocess
 from pathlib import Path
 
-from PySide6.QtCore import QSettings
+from PySide6.QtCore import QSettings, Qt
 from PySide6.QtGui import QAction
 from PySide6.QtWidgets import (QAbstractItemView, QApplication, QComboBox, QFileDialog, QFrame, QHBoxLayout,
-                               QLineEdit, QMainWindow, QPushButton, QSizePolicy, QSpinBox, QStackedWidget,
-                               QTableWidget, QTableWidgetItem, QToolBar, QVBoxLayout, QWidget)
+                               QInputDialog, QLineEdit, QMainWindow, QMenu, QPushButton, QSizePolicy, QSpinBox,
+                               QStackedWidget, QTableWidget, QTableWidgetItem, QToolBar, QToolButton,
+                               QVBoxLayout, QWidget)
 
 from robot_mind import strip_controls
 
 from . import engine
 from .icons import ICON_SIZE, app_icon, icon
+from .settings import AppSettings, open_in_editor
 from .theme import THEME_ICONS, THEME_MODES, apply_theme
 from .widgets import EmptyState, card, gap, plain_label, shade
 from .worker import Worker
@@ -38,6 +41,7 @@ class MainWindow(QMainWindow):
         super().__init__()
         self.worker = worker or Worker()
         self.settings = settings if settings is not None else QSettings(ORG, APP_NAME)
+        self.saved = AppSettings(self.settings)
         mode = self.settings.value("theme", "system")
         self.theme_mode = mode if mode in THEME_MODES else "system"
         self.t = apply_theme(QApplication.instance(), self.theme_mode)
@@ -64,6 +68,13 @@ class MainWindow(QMainWindow):
         self.repo_action.setToolTip("Choose the Robot Framework repo to look up")
         self.repo_action.triggered.connect(self.choose_repo)
         bar.addAction(self.repo_action)
+        self.repos_button = QToolButton()
+        self.repos_button.setText("Saved")
+        self.repos_button.setToolTip("Saved repos")
+        self.repos_button.setPopupMode(QToolButton.ToolButtonPopupMode.InstantPopup)
+        self.repos_menu = QMenu(self.repos_button)
+        self.repos_button.setMenu(self.repos_menu)
+        bar.addWidget(self.repos_button)
         spacer = QWidget()
         spacer.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred)
         bar.addWidget(spacer)
@@ -73,6 +84,7 @@ class MainWindow(QMainWindow):
         self.theme_button = bar.widgetForAction(self.theme_action)
         self.theme_button.setAccessibleName("Theme")
         self.toolbar = bar
+        self.refresh_repos_menu()
         self._theme_look()
 
     def _body(self):
@@ -92,7 +104,7 @@ class MainWindow(QMainWindow):
         self.stack = QStackedWidget()
         self.stack.addWidget(self.empty_state)
         self.stack.addWidget(self.results)
-        self.results_holder = card(self.stack, self.t)
+        self.results_holder = card(self._results_pane(), self.t)
         self.cards = [self.results_holder]
         outer.addWidget(self.results_holder, 1)
         self.status = plain_label("", "hint")
@@ -106,6 +118,12 @@ class MainWindow(QMainWindow):
         row = QHBoxLayout(box)
         row.setContentsMargins(8, 6, 8, 6)
         row.setSpacing(6)
+        self.history_button = QToolButton()
+        self.history_button.setText("Recent")
+        self.history_button.setToolTip("Recent queries")
+        self.history_button.setPopupMode(QToolButton.ToolButtonPopupMode.InstantPopup)
+        self.history_menu = QMenu(self.history_button)
+        self.history_button.setMenu(self.history_menu)
         self.command = QComboBox()
         self.command.addItems(COMMANDS)
         self.term = QLineEdit()
@@ -117,12 +135,34 @@ class MainWindow(QMainWindow):
         self.search_button = QPushButton("Search")
         self.search_button.setObjectName("primary")
         self.search_button.clicked.connect(self.search)
+        row.addWidget(self.history_button)
         row.addWidget(self.command)
         row.addWidget(self.term, 1)
         row.addWidget(plain_label("limit", "hint"))
         row.addWidget(self.limit)
         row.addWidget(self.search_button)
         return box
+
+    def _results_pane(self):
+        pane = QWidget()
+        column = QVBoxLayout(pane)
+        column.setContentsMargins(8, 8, 8, 8)
+        head = QHBoxLayout()
+        self.filter = QLineEdit()
+        self.filter.setPlaceholderText("filter results by tag, name or text")
+        self.filter.textChanged.connect(self._apply_filter)
+        self.copy_button = QPushButton("Copy")
+        self.copy_button.setToolTip("Copy the selected hit")
+        self.copy_button.clicked.connect(self.copy_selected)
+        self.open_button = QPushButton("Open")
+        self.open_button.setToolTip("Open the selected hit at its line in the editor")
+        self.open_button.clicked.connect(self.open_selected)
+        head.addWidget(self.filter, 1)
+        head.addWidget(self.copy_button)
+        head.addWidget(self.open_button)
+        column.addLayout(head)
+        column.addWidget(self.stack, 1)
+        return pane
 
     # ---------------------------------------------------------------- repo and theme
     def choose_repo(self):
@@ -134,6 +174,24 @@ class MainWindow(QMainWindow):
         self.repo = str(path)
         self.repo_action.setText(Path(self.repo).name or self.repo)
         self.repo_action.setToolTip(self.repo)
+        self.saved.add_repo(self.repo)
+        self.refresh_repos_menu()
+
+    def refresh_repos_menu(self):
+        self.repos_menu.clear()
+        for repo in self.saved.repos():
+            action = self.repos_menu.addAction(Path(repo).name or repo)
+            action.setToolTip(repo)
+            action.triggered.connect(lambda _=False, r=repo: self.set_repo(r))
+        self.repos_menu.addSeparator()
+        editor = self.repos_menu.addAction("Set editor command...")
+        editor.triggered.connect(self.edit_editor_command)
+
+    def edit_editor_command(self):
+        current = self.saved.editor_command()
+        text, ok = QInputDialog.getText(self, "Editor command", "Use {file} and {line}:", text=current)
+        if ok and text.strip():
+            self.saved.set_editor_command(text.strip())
 
     def set_theme(self, mode, save=True):
         self.theme_mode = mode if mode in THEME_MODES else "system"
@@ -158,6 +216,8 @@ class MainWindow(QMainWindow):
             self.status.setText("Pick a robot repo first.")
             return None
         command, term = self.command.currentText(), self.term.text()
+        self.saved.add_history(command, term)
+        self.refresh_history_menu()
         job = self.worker.reserve()
         self.status.setText(f"Searching {command} {term}...")
         self.empty_state.show_text("Searching...", "Reading the index; results show when it finishes.")
@@ -171,14 +231,29 @@ class MainWindow(QMainWindow):
     def _failed(self, job, text):
         self.status.setText(strip_controls(text[:200]))
 
+    def refresh_history_menu(self):
+        self.history_menu.clear()
+        for command, term in self.saved.history():
+            action = self.history_menu.addAction(f"{command}: {term}")
+            action.triggered.connect(lambda _=False, c=command, t=term: self.run_history(c, t))
+
+    def run_history(self, command, term):
+        self.command.setCurrentText(command)
+        self.term.setText(term)
+        self.search()
+
     def set_results(self, hits):
         self.results.setRowCount(0)
+        self.filter.clear()
         shown = hits[: self.DISPLAY_LIMIT]
         for hit in shown:
             row = self.results.rowCount()
             self.results.insertRow(row)
             for column, text in enumerate((hit.kind, hit.name, self._location(hit), hit_detail(hit))):
-                self.results.setItem(row, column, QTableWidgetItem(strip_controls(str(text))))
+                item = QTableWidgetItem(strip_controls(str(text)))
+                if column == 0:
+                    item.setData(Qt.ItemDataRole.UserRole, hit)
+                self.results.setItem(row, column, item)
         if hits:
             self.stack.setCurrentWidget(self.results)
             extra = len(hits) - len(shown)
@@ -187,6 +262,38 @@ class MainWindow(QMainWindow):
             self.empty_state.show_text("No match", "Nothing in this repo matched that lookup.")
             self.stack.setCurrentWidget(self.empty_state)
             self.status.setText("No match")
+
+    def _apply_filter(self, term=""):
+        needle = term.strip().lower()
+        for row in range(self.results.rowCount()):
+            text = " ".join(self.results.item(row, c).text() if self.results.item(row, c) else ""
+                            for c in range(self.results.columnCount())).lower()
+            self.results.setRowHidden(row, bool(needle) and needle not in text)
+
+    def _selected_hit(self):
+        row = self.results.currentRow()
+        if row < 0:
+            return None
+        item = self.results.item(row, 0)
+        return item.data(Qt.ItemDataRole.UserRole) if item else None
+
+    def copy_selected(self):
+        hit = self._selected_hit()
+        if hit is None:
+            return
+        QApplication.clipboard().setText(f"{hit.kind}  {hit.name}  {self._location(hit)}")
+        self.status.setText("Copied to clipboard")
+
+    def open_selected(self):
+        hit = self._selected_hit()
+        if hit is None or not self.repo:
+            return
+        argv = open_in_editor(hit.file, hit.call_line or hit.line, self.saved.editor_command())
+        try:
+            subprocess.Popen(argv, cwd=self.repo)
+            self.status.setText(f"Opened {self._location(hit)}")
+        except OSError as err:
+            self.status.setText(f"Could not open editor: {err}")
 
     @staticmethod
     def _location(hit):
