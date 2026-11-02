@@ -11,3 +11,8 @@ Change Zone NEW Lists Zones
 Cases Page Opens For QC
     [Tags]    role:role_quality_control
     Open Cases Page    role_quality_control
+
+Cases Page Cleans Up
+    [Setup]    Query Items
+    Log    body
+    [Teardown]    Query Items

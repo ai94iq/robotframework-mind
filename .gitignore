@@ -1,2 +1,6 @@
 .metrics/
 __pycache__/
+.coverage
+coverage/
+coverage.json
+lcov.info

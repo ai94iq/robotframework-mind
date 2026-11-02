@@ -111,6 +111,11 @@ class WhereTests(unittest.TestCase):
         out = self.where("find", "principals")
         self.assertIn('json  principals  docs/roles.json  = ["apikey:PARTNER"', out)
 
+    def test_callers_include_test_setup_and_teardown(self):
+        out = self.where("callers", "Query Items")
+        self.assertIn("test  Cases Page Cleans Up  tests/cases.robot:16", out)
+        self.assertIn("test  Cases Page Cleans Up  tests/cases.robot:18", out)
+
     def test_no_match_says_so(self):
         self.assertEqual(self.where("ticket", "PROJ-9999").strip(), "no match")
 
