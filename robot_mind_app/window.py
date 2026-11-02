@@ -51,6 +51,7 @@ class MainWindow(QMainWindow):
         self.setWindowIcon(app_icon())
         self._toolbar()
         self._body()
+        self.refresh_history_menu()
         self.worker.finished.connect(self._finished)
         self.worker.failed.connect(self._failed)
         self.resize(1100, 720)
@@ -130,8 +131,8 @@ class MainWindow(QMainWindow):
         self.term.setPlaceholderText("ticket key, keyword, tag, or text")
         self.term.returnPressed.connect(self.search)
         self.limit = QSpinBox()
-        self.limit.setRange(1, 5000)
-        self.limit.setValue(200)
+        self.limit.setRange(1, self.DISPLAY_LIMIT)
+        self.limit.setValue(self.DISPLAY_LIMIT)
         self.search_button = QPushButton("Search")
         self.search_button.setObjectName("primary")
         self.search_button.clicked.connect(self.search)
@@ -245,7 +246,7 @@ class MainWindow(QMainWindow):
     def set_results(self, hits):
         self.results.setRowCount(0)
         self.filter.clear()
-        shown = hits[: self.DISPLAY_LIMIT]
+        shown = hits[: self.limit.value()]
         for hit in shown:
             row = self.results.rowCount()
             self.results.insertRow(row)

@@ -154,6 +154,21 @@ class LookupTest(unittest.TestCase):
         self.window.search()
         self.assertEqual(AppSettings(self.settings).history()[0], ("kw", "Open Profile Browser"))
 
+    def test_the_limit_control_caps_the_displayed_rows(self):
+        from robot_mind import Hit
+        self.window.limit.setValue(2)
+        self.window.set_results([Hit("keyword", f"K{i}", "a.robot", line=1) for i in range(5)])
+        self.assertEqual(self.window.results.rowCount(), 2)
+        self.assertIn("5", self.window.status.text())
+
+    def test_history_menu_shows_saved_history_on_startup(self):
+        from robot_mind_app.settings import AppSettings
+        from robot_mind_app.window import MainWindow
+        AppSettings(self.settings).add_history("tag", "role:admin")
+        window = MainWindow(worker=self.worker, settings=self.settings, cache_dir=self.tmp / "cache")
+        self.addCleanup(window.close)
+        self.assertIn("tag: role:admin", [a.text() for a in window.history_menu.actions()])
+
 
 if __name__ == "__main__":
     unittest.main()
