@@ -63,6 +63,7 @@ def parse_robot(path: Path, rel: str) -> list[Entry]:
     model = (get_resource_model if path.suffix == ".resource" else get_model)(str(path))
     entries: list[Entry] = []
     file_tags: list[str] = []
+    default_tags: list[str] = []
 
     class Visitor(ModelVisitor):
         scope: Entry | None = None
@@ -88,7 +89,10 @@ def parse_robot(path: Path, rel: str) -> list[Entry]:
         def visit_TestTags(self, node):
             file_tags.extend(node.values)
 
-        visit_ForceTags = visit_DefaultTags = visit_TestTags
+        visit_ForceTags = visit_TestTags
+
+        def visit_DefaultTags(self, node):
+            default_tags.extend(node.values)
 
         def visit_Documentation(self, node):
             if self.scope:
@@ -133,6 +137,8 @@ def parse_robot(path: Path, rel: str) -> list[Entry]:
     Visitor().visit(model)
     for e in entries:
         if e.kind == "test":
+            if not e.tags:
+                e.tags.extend(t for t in default_tags if t not in e.tags)
             e.tags.extend(t for t in file_tags if t not in e.tags)
     return entries
 

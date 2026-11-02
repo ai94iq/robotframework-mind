@@ -116,6 +116,12 @@ class WhereTests(unittest.TestCase):
         self.assertIn("test  Cases Page Cleans Up  tests/cases.robot:16", out)
         self.assertIn("test  Cases Page Cleans Up  tests/cases.robot:18", out)
 
+    def test_default_tags_apply_only_to_tests_without_their_own(self):
+        out = self.where("tag", "dflt:yes")
+        self.assertIn("No Own Tags", out)
+        self.assertNotIn("Has Own Tags", out)
+        self.assertIn("own:yes", self.where("tag", "own:yes"))
+
     def test_no_match_says_so(self):
         self.assertEqual(self.where("ticket", "PROJ-9999").strip(), "no match")
 
