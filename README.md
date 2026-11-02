@@ -46,7 +46,8 @@ prints the hits as a JSON array (each with `kind`, `name`, `file`, `line`; a
 The index lives in `~/.cache/robotframework-mind/`, one file per repo, never
 in the repo. Each call compares file times and sizes and parses only changed
 files. In a git repo it reads the files git tracks or would track, so
-git-ignored probes and results stay out.
+git-ignored probes and results stay out. Files over the size cap are skipped:
+5 MB for `docs/` JSON, 50 MB for `.robot` and `.resource`.
 
 ## Tests
 

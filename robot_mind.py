@@ -23,6 +23,7 @@ ROBOT_EXTS = {".robot", ".resource"}
 SKIP_DIRS = {".git", ".venv", "venv", "node_modules", "results", "__pycache__", "graphify-out"}
 JSON_DIR = "docs"
 JSON_MAX_BYTES = 5_000_000
+ROBOT_MAX_BYTES = 50_000_000
 VALUE_WIDTH = 160
 JSON_WIDTH = 300
 CACHE_VERSION = 1
@@ -48,10 +49,16 @@ def norm(name: str) -> str:
 
 
 VAR_REF = re.compile(r"[$@&%]\{([^}\[]+)")
+CONTROLS = re.compile(r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f-\x9f]")
 
 
 def var_refs(text: str) -> list[str]:
     return [norm(m) for m in VAR_REF.findall(text)]
+
+
+def strip_controls(text: str) -> str:
+    """Drop terminal control bytes so repo text cannot inject escapes into printed output."""
+    return CONTROLS.sub("", text)
 
 
 # ---------------------------------------------------------------- parsing
@@ -186,7 +193,12 @@ def git_files(repo: Path) -> list[Path] | None:
                              cwd=repo, capture_output=True, check=True).stdout
     except (OSError, subprocess.CalledProcessError):
         return None
-    return [repo / p for p in out.decode("utf-8").split("\0") if p]
+    return [repo / p for p in ls_names(out)]
+
+
+def ls_names(raw: bytes) -> list[str]:
+    """Split NUL-separated git ls-files output, tolerating names that are not valid UTF-8."""
+    return [p for p in raw.decode("utf-8", errors="replace").split("\0") if p]
 
 
 def candidate_files(root: Path) -> list[Path]:
@@ -213,10 +225,12 @@ def candidate_files(root: Path) -> list[Path]:
 
 def source_files(root: Path) -> list[Path]:
     def wanted(path: Path) -> bool:
+        if not path.is_file():
+            return False
         if path.suffix in ROBOT_EXTS:
-            return path.is_file()
+            return path.stat().st_size <= ROBOT_MAX_BYTES
         return (path.suffix == ".json" and JSON_DIR in path.relative_to(root).parts[:-1]
-                and path.is_file() and path.stat().st_size <= JSON_MAX_BYTES)
+                and path.stat().st_size <= JSON_MAX_BYTES)
     return sorted(p for p in candidate_files(root) if wanted(p))
 
 
@@ -312,7 +326,7 @@ def fmt(e: Entry, line: int | None = None) -> str:
     at = line or e.line
     loc = f"{e.file}:{at}" if at else e.file
     head = "  ".join(part for part in (e.kind, e.name, loc) if part)
-    return head if line else head + SUFFIX.get(e.kind, lambda _: "")(e)
+    return strip_controls(head if line else head + SUFFIX.get(e.kind, lambda _: "")(e))
 
 
 def run(argv: list[str], root: Path | None = None, cache_dir: Path | None = None) -> str:

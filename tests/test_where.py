@@ -7,6 +7,7 @@ import time
 import unittest
 from pathlib import Path
 
+import robot_mind
 from robot_mind import run
 
 FIXTURE = Path(__file__).parent / "fixture"
@@ -145,6 +146,33 @@ class WhereTests(unittest.TestCase):
 
     def test_no_match_says_so(self):
         self.assertEqual(self.where("ticket", "PROJ-9999").strip(), "no match")
+
+    def test_git_file_names_tolerate_non_utf8_bytes(self):
+        self.assertEqual(robot_mind.ls_names(b"a\xffb\x00c"), ["a\ufffdb", "c"])
+
+    def test_robot_files_over_the_size_cap_are_skipped(self):
+        root = self.tmp / "big"
+        root.mkdir()
+        (root / "small.robot").write_text("*** Test Cases ***\nT\n    Log    x\n")
+        (root / "big.robot").write_text("x" * 4096)
+        old = robot_mind.ROBOT_MAX_BYTES
+        robot_mind.ROBOT_MAX_BYTES = 100
+        try:
+            names = {p.name for p in robot_mind.source_files(root)}
+        finally:
+            robot_mind.ROBOT_MAX_BYTES = old
+        self.assertIn("small.robot", names)
+        self.assertNotIn("big.robot", names)
+
+    def test_printed_lines_strip_escape_sequences(self):
+        root = self.tmp / "esc"
+        (root / "tests").mkdir(parents=True)
+        (root / "tests" / "evil.robot").write_text(
+            "*** Keywords ***\nEvil KW\n    [Documentation]    \x1b[31mRED\n    Log    x\n",
+            encoding="utf-8")
+        out = run(["kw", "Evil KW"], root=root, cache_dir=self.cache)
+        self.assertNotIn("\x1b", out)
+        self.assertIn("[31mRED", out)
 
 
 if __name__ == "__main__":
