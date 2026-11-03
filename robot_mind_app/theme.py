@@ -103,6 +103,27 @@ QMenu::item:disabled {{ color: {ink2}; }}
 QMenu::separator {{ height: 1px; background: {line}; margin: 4px 8px; }}
 QMenu::indicator {{ width: 0; }}
 QToolTip {{ background: {raised}; color: {ink}; border: 1px solid {line}; border-radius: 6px; padding: 4px 8px; }}
+QFrame#sidebar {{ background: {panel}; border: 0; border-right: 1px solid {line}; }}
+QLabel#label {{ color: {ink2}; font-size: 11px; font-weight: 600; }}
+QListWidget#nav {{ background: transparent; border: 0; outline: 0; }}
+QListWidget#nav::item {{ padding: 6px 8px; border-radius: 7px; color: {ink}; }}
+QListWidget#nav::item:hover {{ background: {hover}; }}
+QListWidget#nav::item:selected {{ background: {accent_soft}; color: {ink}; }}
+QPushButton#command {{ background: {raised}; border: 1px solid {line}; border-radius: 8px;
+    padding: 6px 12px; color: {ink}; text-align: center; }}
+QPushButton#command:hover {{ background: {hover}; }}
+QPushButton#command:focus {{ border-color: {accent}; }}
+QPushButton#command::menu-indicator {{ image: url({chevron_down}); width: 12px; height: 12px;
+    subcontrol-position: center right; subcontrol-origin: padding; right: 8px; }}
+QSpinBox {{ background: {raised}; border: 1px solid {line}; border-radius: 8px; padding: 6px 8px;
+    color: {ink}; }}
+QSpinBox:focus {{ border-color: {accent}; background: {panel}; }}
+QSpinBox::up-button, QSpinBox::down-button {{ width: 0; border: 0; }}
+QLabel#brand {{ font-size: 15px; font-weight: 700; }}
+QLabel#pagetitle {{ font-size: 22px; font-weight: 700; }}
+QToolButton#theme {{ background: transparent; border: 0; border-radius: 8px; padding: 5px; }}
+QToolButton#theme:hover {{ background: {hover}; }}
+QToolButton#theme:focus {{ border: 1px solid {accent}; }}
 """
 
 TIP_DELAY = 50                 # ms before a tooltip shows; Qt's default of 700 reads as lag

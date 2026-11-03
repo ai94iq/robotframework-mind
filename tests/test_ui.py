@@ -75,13 +75,13 @@ class LookupTest(unittest.TestCase):
         self.addCleanup(self.window.close)
         self.window.set_repo(str(self.root))
 
-    def test_command_dropdown_has_the_five_commands(self):
-        self.assertEqual([self.window.command.itemText(i) for i in range(self.window.command.count())],
+    def test_command_menu_has_the_five_commands(self):
+        self.assertEqual([a.text() for a in self.window.command_menu.actions()],
                          ["ticket", "kw", "callers", "tag", "find"])
 
     def test_a_search_fills_the_results_table(self):
         from robot_mind_app import engine
-        self.window.command.setCurrentText("ticket")
+        self.window.set_command("ticket")
         self.window.term.setText("PROJ-2120")
         job = self.window.search()
         hits = engine.query(self.root, "ticket", "PROJ-2120", cache_dir=self.tmp / "cache")
@@ -92,7 +92,7 @@ class LookupTest(unittest.TestCase):
     def test_search_without_a_repo_asks_for_one(self):
         self.window.repo = None
         self.assertIsNone(self.window.search())
-        self.assertIn("Pick a robot repo", self.window.status.text())
+        self.assertIn("Choose a repo", self.window.status.text())
 
     def test_no_match_shows_the_empty_state(self):
         job = self.window.search()
@@ -165,7 +165,7 @@ class LookupTest(unittest.TestCase):
 
     def test_history_records_a_search(self):
         from robot_mind_app.settings import AppSettings
-        self.window.command.setCurrentText("kw")
+        self.window.set_command("kw")
         self.window.term.setText("Open Profile Browser")
         self.window.search()
         self.assertEqual(AppSettings(self.settings).history()[0], ("kw", "Open Profile Browser"))
@@ -177,13 +177,14 @@ class LookupTest(unittest.TestCase):
         self.assertEqual(self.window.results.rowCount(), 2)
         self.assertIn("5", self.window.status.text())
 
-    def test_history_menu_shows_saved_history_on_startup(self):
+    def test_recent_shows_saved_history_on_startup(self):
         from robot_mind_app.settings import AppSettings
         from robot_mind_app.window import MainWindow
         AppSettings(self.settings).add_history("tag", "role:admin")
         window = MainWindow(worker=self.worker, settings=self.settings, cache_dir=self.tmp / "cache")
         self.addCleanup(window.close)
-        self.assertIn("tag: role:admin", [a.text() for a in window.history_menu.actions()])
+        texts = [window.history_list.item(i).text() for i in range(window.history_list.count())]
+        self.assertIn("tag: role:admin", texts)
 
 
 if __name__ == "__main__":
