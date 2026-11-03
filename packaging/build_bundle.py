@@ -15,6 +15,7 @@ import subprocess
 import sys
 import tarfile
 import tempfile
+import time
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 NAME = "robotframework-mind"
@@ -50,6 +51,19 @@ def self_check():
         raise SystemExit(f"The bundle failed its self-check (exit {code}).")
 
 
+def _dmg(src, target, volname="Robot Framework Mind", attempts=3):
+    """Create the DMG, clearing a stale mount of the same name and retrying a transient hdiutil busy."""
+    for attempt in range(1, attempts + 1):
+        subprocess.run(["hdiutil", "detach", f"/Volumes/{volname}", "-force"], capture_output=True)
+        done = subprocess.run(["hdiutil", "create", "-volname", volname, "-srcfolder", src,
+                               "-ov", "-format", "UDZO", target], capture_output=True, text=True)
+        if done.returncode == 0:
+            return
+        if attempt == attempts:
+            raise SystemExit(f"hdiutil create failed after {attempts} attempts: {done.stderr.strip()}")
+        time.sleep(2)
+
+
 def pack(out):
     os.makedirs(out, exist_ok=True)
     stem = f"{NAME}-{version()}"
@@ -59,8 +73,7 @@ def pack(out):
     elif sys.platform == "darwin":
         arch = "arm64" if platform.machine() == "arm64" else "x64"
         target = os.path.join(out, f"{stem}-macos-{arch}.dmg")
-        subprocess.run(["hdiutil", "create", "-volname", "Robot Framework Mind", "-srcfolder",
-                        os.path.join(ROOT, "dist", f"{NAME}.app"), "-ov", "-format", "UDZO", target], check=True)
+        _dmg(os.path.join(ROOT, "dist", f"{NAME}.app"), target)
     else:
         target = os.path.join(out, f"{stem}-linux-x64.tar.gz")
         with tarfile.open(target, "w:gz") as tar:
