@@ -8,5 +8,6 @@ build/
 dist/
 bundles/
 .pytest_cache/
+*.egg-info/
 *.pyc
 tmp/
