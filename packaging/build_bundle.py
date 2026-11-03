@@ -18,7 +18,7 @@ import tempfile
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 NAME = "robotframework-mind"
-TOOLS = ["pyinstaller==6.22.3", "pillow==12.3.0"]     # pinned for repeatable bundles; bump to the latest on purpose
+TOOLS = ["pyinstaller==6.22.3", "pillow==13.0.0"]     # pinned for repeatable bundles; bump to the latest on purpose
 
 
 def version():
