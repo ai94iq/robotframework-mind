@@ -250,6 +250,8 @@ class MainWindow(QMainWindow):
         path = QFileDialog.getExistingDirectory(self, "Choose a robot repo", self.repo or "")
         if path:
             self.set_repo(path)
+            self.saved.add_repo(self.repo)
+            self.refresh_repos()
 
     def set_repo(self, path):
         self.repo = str(path)
@@ -257,9 +259,14 @@ class MainWindow(QMainWindow):
         self.page_title.setText(name)
         self.page_title.setToolTip(self.repo)
         self.page_sub.setText(self.repo)
-        self.saved.add_repo(self.repo)
-        self.refresh_repos()
         self._brand_icon()
+        self.results.setRowCount(0)
+        self.count_chip.setText("0 hits")
+        self._status_base = f"Ready - {name}"
+        self.status.setText(self._status_base)
+        self.empty_state.show_text("Ready when you are",
+                                   f"Search {name} for a ticket, keyword, tag or endpoint.")
+        self.stack.setCurrentWidget(self.empty_state)
 
     def refresh_repos(self):
         self.repos_list.clear()

@@ -7,7 +7,7 @@ from pathlib import Path
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
-from PySide6.QtCore import QObject, QSettings, Signal
+from PySide6.QtCore import QObject, QSettings, Qt, Signal
 from PySide6.QtWidgets import QApplication
 
 FIXTURE = Path(__file__).parent / "fixture"
@@ -185,6 +185,20 @@ class LookupTest(unittest.TestCase):
         self.addCleanup(window.close)
         texts = [window.history_list.item(i).text() for i in range(window.history_list.count())]
         self.assertIn("tag: role:admin", texts)
+
+    def test_clicking_a_saved_repo_activates_it_and_resets_the_view(self):
+        from robot_mind_app.settings import AppSettings
+        from robot_mind_app.window import MainWindow
+        AppSettings(self.settings).add_repo("C:/repoA")
+        window = MainWindow(worker=self.worker, settings=self.settings, cache_dir=self.tmp / "cache")
+        self.addCleanup(window.close)
+        item = next(window.repos_list.item(i) for i in range(window.repos_list.count())
+                    if window.repos_list.item(i).data(Qt.ItemDataRole.UserRole) == "C:/repoA")
+        window.repos_list.itemClicked.emit(item)
+        self.assertEqual(window.repo, "C:/repoA")
+        self.assertEqual(window.page_title.text(), "repoA")
+        self.assertIn("Ready", window.status.text())
+        self.assertIs(window.stack.currentWidget(), window.empty_state)
 
 
 if __name__ == "__main__":
