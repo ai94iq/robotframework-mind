@@ -137,6 +137,16 @@ class LookupTest(unittest.TestCase):
         argv = open_in_editor("a b.robot", 12, '"C:/Program Files/Code/code.exe" --goto {file}:{line}')
         self.assertEqual(argv, ["C:/Program Files/Code/code.exe", "--goto", "a b.robot:12"])
 
+    def test_open_in_editor_prefixes_a_dash_filename(self):
+        from robot_mind_app.settings import open_in_editor
+        self.assertEqual(open_in_editor("--x.robot", 3, "code --goto {file}:{line}"),
+                         ["code", "--goto", "./--x.robot:3"])
+
+    def test_editor_command_ignores_a_blank_stored_value(self):
+        from robot_mind_app.settings import AppSettings, DEFAULT_EDITOR
+        AppSettings(self.settings).set_editor_command("   ")
+        self.assertEqual(AppSettings(self.settings).editor_command(), DEFAULT_EDITOR)
+
     def test_tag_filter_narrows_results(self):
         from robot_mind import Hit
         hits = [Hit("test", "T1", "a.robot", 1, tags=["role:admin"]),

@@ -42,7 +42,8 @@ class AppSettings:
 
     # ---------------------------------------------------------------- editor
     def editor_command(self) -> str:
-        return self.s.value("editor", DEFAULT_EDITOR) or DEFAULT_EDITOR
+        value = str(self.s.value("editor", DEFAULT_EDITOR) or "").strip()
+        return value or DEFAULT_EDITOR
 
     def set_editor_command(self, command: str):
         self.s.setValue("editor", command)
@@ -54,7 +55,12 @@ def _unquote(token: str) -> str:
     return token
 
 
+def _file_arg(file: str) -> str:
+    """Prefix a name starting with '-' so it is not read as an option (S2)."""
+    return "./" + file if file.startswith("-") else file
+
+
 def open_in_editor(file: str, line: int, command: str = DEFAULT_EDITOR) -> list[str]:
     """The argv that opens `file` at `line`; the caller runs it (no shell, so spaces in a path are safe)."""
     parts = [_unquote(part) for part in shlex.split(command, posix=False)]
-    return [part.replace("{file}", file).replace("{line}", str(line)) for part in parts]
+    return [part.replace("{file}", _file_arg(file)).replace("{line}", str(line)) for part in parts]

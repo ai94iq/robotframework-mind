@@ -62,9 +62,20 @@ def icon(name, color, on_color=None):
     return QIcon(SvgIconEngine(name, color, on_color))
 
 
+_ICON_DIR = None
+
+
+def _icon_dir():
+    """A per-process temp folder: not a predictable path another process could plant files in."""
+    global _ICON_DIR
+    if _ICON_DIR is None:
+        _ICON_DIR = tempfile.mkdtemp(prefix="robotframework-mind-icons-")
+    return _ICON_DIR
+
+
 def chevrons(color):
     """Paths of chevron PNGs (plus @2x) in a temp folder: stylesheets take image files, not icons."""
-    folder = os.path.join(tempfile.gettempdir(), "__app__-icons")
+    folder = _icon_dir()
     os.makedirs(folder, exist_ok=True)
     paths = {}
     for name in ("chevron-right", "chevron-down"):
