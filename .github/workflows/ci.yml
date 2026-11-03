@@ -55,9 +55,36 @@ jobs:
           name: bundle-${{ matrix.os }}
           path: bundles/
 
+  installer:
+    needs: bundles
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v7.0.1
+      - uses: actions/setup-python@v7.0.0
+        with:
+          python-version: '3.14'
+      - uses: actions/download-artifact@v8.0.2
+        with:
+          name: bundle-windows-latest
+          path: bundles
+      - name: Compile the per-user installer
+        shell: pwsh
+        run: |
+          $iscc = "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe"
+          if (-not (Test-Path $iscc)) {
+            choco install innosetup -y --no-progress
+            $iscc = "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe"
+          }
+          $version = python -c "import ast; t=open('robot_mind_app/__init__.py').read(); print([n.value.value for n in ast.parse(t).body if isinstance(n,ast.Assign) and getattr(n.targets[0],'id','')=='__version__'][0])"
+          & $iscc "/DAppVersion=$version" "packaging/installer.iss"
+      - uses: actions/upload-artifact@v7.0.2
+        with:
+          name: bundle-windows-installer
+          path: bundles/*-setup.exe
+
   release:
     if: startsWith(github.ref, 'refs/tags/v')
-    needs: [test, bundles]
+    needs: [test, bundles, installer]
     runs-on: ubuntu-latest
     permissions:
       contents: write   # attach files to the GitHub release, this job only

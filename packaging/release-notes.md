@@ -5,6 +5,7 @@ Download the file for your system, then start it. No Python needed.
 | System | File |
 |---|---|
 | Windows 10 or 11, x64 | `robotframework-mind-<version>-windows-x64.exe` |
+| Windows 10 or 11, x64 (installer with Start menu shortcut) | `robotframework-mind-<version>-windows-x64-setup.exe` |
 | Linux x64 (glibc 2.39 or newer, such as Ubuntu 24.04) | `robotframework-mind-<version>-linux-x64.tar.gz` |
 | macOS on Apple silicon | `robotframework-mind-<version>-macos-arm64.dmg` |
 | macOS on Intel | `robotframework-mind-<version>-macos-x64.dmg` |
