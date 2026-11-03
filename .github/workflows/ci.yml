@@ -71,10 +71,7 @@ jobs:
         shell: pwsh
         run: |
           $iscc = "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe"
-          if (-not (Test-Path $iscc)) {
-            choco install innosetup -y --no-progress
-            $iscc = "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe"
-          }
+          if (-not (Test-Path $iscc)) { throw "Inno Setup (ISCC.exe) not found on this runner." }
           $version = python -c "import ast; t=open('robot_mind_app/__init__.py').read(); print([n.value.value for n in ast.parse(t).body if isinstance(n,ast.Assign) and getattr(n.targets[0],'id','')=='__version__'][0])"
           & $iscc "/DAppVersion=$version" "packaging/installer.iss"
       - uses: actions/upload-artifact@v7.0.2
@@ -100,7 +97,7 @@ jobs:
           merge-multiple: true
           path: bundles
       - run: cd bundles && sha256sum * > SHA256SUMS
-      - uses: softprops/action-gh-release@v3.0.3
+      - uses: softprops/action-gh-release@efb35369e0ad2afab669f228072c1b0d510eae64  # v3.0.3
         with:
           files: bundles/*
           body_path: packaging/release-notes.md
