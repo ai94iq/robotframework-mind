@@ -21,7 +21,7 @@ def parse(argv):
 
 
 def self_check(report):
-    """What a packaged bundle must prove without a display: Qt, SVG icons and the window load in both themes."""
+    """What a packaged bundle must prove without a display: Qt, SVG icons, the window in both themes, and a query."""
     from PySide6.QtCore import QSettings
     from . import __version__
     from .window import MainWindow
@@ -33,6 +33,16 @@ def self_check(report):
             window.set_theme(mode)
             lines.append(f"theme {mode}: ok")
         lines.append(f"icon sizes: {sorted(s.width() for s in window.windowIcon().availableSizes())}")
+        # Exercise the query path so the bundle carries robot.api too, not just the window.
+        import tempfile
+        from pathlib import Path
+        from robot_mind import query
+        with tempfile.TemporaryDirectory() as work:
+            repo = Path(work)
+            (repo / "smoke.robot").write_text("*** Test Cases ***\nSmoke\n    Log    x\n", encoding="utf-8")
+            hits = query(repo, "ticket", "Smoke", cache_dir=repo / "cache")
+        lines.append(f"query: {len(hits)} hit")
+        ok = ok and len(hits) == 1
     except Exception as err:          # the report says why; the exit code says that it failed
         lines.append(f"error: {type(err).__name__}: {err}")
         ok = False

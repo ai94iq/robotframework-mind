@@ -4,3 +4,9 @@ __pycache__/
 coverage/
 coverage.json
 lcov.info
+build/
+dist/
+bundles/
+.pytest_cache/
+*.pyc
+tmp/

@@ -55,6 +55,7 @@ class SelfCheckTest(unittest.TestCase):
         with open(report, encoding="utf-8") as handle:
             text = handle.read()
         self.assertIn("theme dark: ok", text)
+        self.assertIn("query: 1 hit", text)
         self.assertNotIn("error", text)
 
 
