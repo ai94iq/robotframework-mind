@@ -101,3 +101,37 @@ jobs:
         with:
           files: bundles/*
           body_path: packaging/release-notes.md
+
+  pypi-build:
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7.0.1
+      - uses: actions/setup-python@v7.0.0
+        with:
+          python-version: '3.14'
+      # Same guard as the release job: the tag must equal the code's version.
+      - run: |
+          version=$(python3 -c 'import ast; t=open("robot_mind_app/__init__.py").read(); print([n.value.value for n in ast.parse(t).body if isinstance(n, ast.Assign) and getattr(n.targets[0], "id", "") == "__version__"][0])')
+          test "v$version" = "$GITHUB_REF_NAME"
+      - run: python -m pip install -q -U pip build twine && python -m build && python -m twine check dist/*
+      - uses: actions/upload-artifact@v7.0.2
+        with:
+          name: pypi-dist
+          path: dist/
+
+  # Trusted publishing: no token is stored. The project's PyPI settings name this
+  # repo, workflow file (ci.yml) and environment (pypi) as the allowed publisher.
+  pypi-publish:
+    needs: pypi-build
+    runs-on: ubuntu-latest
+    environment: pypi
+    permissions:
+      id-token: write   # mint the short-lived PyPI credential, this job only
+    steps:
+      - uses: actions/download-artifact@v8.0.2
+        with:
+          name: pypi-dist
+          path: dist
+      - uses: pypa/gh-action-pypi-publish@aef6c9b6e301dc803e1bc9133e9ce67ae9b0906b  # v1.14.3
