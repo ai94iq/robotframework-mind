@@ -16,6 +16,23 @@ def plain_label(text="", name=""):
     return label
 
 
+class ElidedLabel(QLabel):
+    """One line of plain text that ends in an ellipsis when it does not fit; the tooltip keeps all of it."""
+
+    def __init__(self, text, name=""):
+        super().__init__()
+        self.full = text
+        self.setTextFormat(Qt.TextFormat.PlainText)
+        self.setObjectName(name)
+        self.setToolTip(text)
+        self.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Preferred)
+        self.setText(text)
+
+    def resizeEvent(self, event):
+        self.setText(self.fontMetrics().elidedText(self.full, Qt.TextElideMode.ElideRight, self.width()))
+        super().resizeEvent(event)
+
+
 class EmptyState(QWidget):
     """A centred icon, title and one line of help, for a pane with nothing to show yet."""
 
