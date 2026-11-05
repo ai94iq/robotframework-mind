@@ -76,7 +76,9 @@ h1 { font-size: clamp(2.6rem, 6.4vw, 5.4rem); line-height: .95; font-weight: 700
 /* the call graph, drawn as a detail view */
 .graph { margin-top: 4px; }
 .gwrap { overflow-x: auto; }
-.gsvg { display: block; width: 100%; min-width: 760px; height: auto; }
+.gsvg { display: block; width: 100%; height: auto; }
+.gsvg-d { min-width: 760px; }
+.gsvg-m { display: none; }
 .gsvg text { font: 13px var(--mono); fill: var(--ink); }
 .gsvg .c { font: 700 15px var(--sans); letter-spacing: .02em; }
 .gsvg .sub { fill: var(--ink3); font-size: 11px; }
@@ -118,6 +120,10 @@ h2 { font-size: clamp(1.9rem, 4.2vw, 3.2rem); line-height: 1; font-weight: 700; 
 .js .in .q:nth-child(3) .dim { transition-delay: .16s; }
 .js .in .q:nth-child(4) .dim { transition-delay: .24s; }
 .js .in .q:nth-child(5) .dim { transition-delay: .32s; }
+.axis { position: relative; height: 34px; border-top: 1.5px solid var(--line); margin-top: -10px; }
+.axis .tick { position: absolute; top: 0; padding-top: 12px; transform: translateX(-50%); font: .72rem var(--mono); color: var(--ink3); }
+.axis .tick::before { content: ""; position: absolute; top: 0; left: 50%; height: 8px; border-left: 1.5px solid var(--line); }
+.axis .unit { position: absolute; right: 0; top: 12px; font: .72rem var(--mono); color: var(--ink3); }
 .legend { display: flex; flex-wrap: wrap; gap: 8px 22px; font-size: .85rem; color: var(--ink2); }
 .legend i { display: inline-block; width: 22px; border-top: 3px solid var(--line); vertical-align: middle; margin-right: 8px; }
 .legend i.hit { border-color: var(--red); }
@@ -157,8 +163,15 @@ footer { width: min(1240px, 100% - 32px); margin: 0 auto 40px; display: flex; fl
   .sheet { padding: 28px 18px 20px; width: calc(100% - 16px); margin: 8px auto; }
   .zones, .rows { display: none; }
   .btn.fill { font-size: .78rem; padding: 0 12px; }
+  nav a { padding: 8px 8px; font-size: .78rem; letter-spacing: .04em; }
+  .axis { display: none; }
+  .gsvg-d { display: none; }
+  .gsvg-m { display: block; }
+  .gsvg-m text { font-size: 13px; }
+  .shots { overflow-x: auto; }
+  .shots figure { min-width: 900px; }
   .tb { grid-template-columns: 1fr 1fr; }
-  .tb .t { grid-column: 1 / -1; }
+  .tb .t, .tb div:last-child { grid-column: 1 / -1; }
 }
 @media (prefers-reduced-motion: reduce) {
   html { scroll-behavior: auto; }
@@ -190,7 +203,7 @@ footer { width: min(1240px, 100% - 32px); margin: 0 auto 40px; display: flex; fl
   <div class="hero">
     <div>
       <h1>Ask the repo. Get a <span class="red">line.</span></h1>
-      <p class="lede">One <span class="mono">file:line</span> per hit, so people and agents stop reading whole suites.</p>
+      <p class="lede">Exact lookups over Robot Framework test repos: one <span class="mono">file:line</span> per hit, so people and agents stop reading whole suites.</p>
       <div class="actions">
         <button class="btn fill" type="button" data-copy="pip install robotframework-mind[gui]">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V6a2 2 0 0 1 2-2h9"/></svg>
@@ -220,9 +233,9 @@ test  Cases Page Opens For QC      <b>tests/cases.robot:13</b></pre>
   </div>
 
   <div class="detail graph" id="graph">
-    <div class="dhead caps"><span>Detail B: who calls Login As, as a graph</span><span>Sample repos</span></div>
+    <div class="dhead caps"><span>Detail B: a call graph, drawn</span><span>Sample repos</span></div>
     <div class="gwrap">
-      <svg class="gsvg" viewBox="0 0 1000 380" role="img" aria-label="Graph of the keyword Login As in the middle, linked to six keywords and tests from the API repo and four from the web repo">
+      <svg class="gsvg gsvg-d" viewBox="0 0 1000 380" role="img" aria-label="Graph of the keyword Login As in the middle, linked to six keywords and tests from the API repo and four from the web repo">
         <circle class="ring" cx="500" cy="190" r="64"/>
         <g class="edge-set">
           <path class="edge e-api" pathLength="1" d="M500 190 L262 52"/>
@@ -252,8 +265,32 @@ test  Cases Page Opens For QC      <b>tests/cases.robot:13</b></pre>
           <text class="sub" x="500" y="236" text-anchor="middle">keyword</text>
         </g>
       </svg>
+      <svg class="gsvg gsvg-m" viewBox="0 0 360 300" role="img" aria-label="Graph of the keyword Login As in the middle, linked to six keywords and tests from the API repo on the left and four from the web repo on the right">
+        <circle class="ring" cx="180" cy="160" r="40"/>
+        <g class="edge-set">
+          <path class="edge e-api" pathLength="1" d="M180 160 L36 70"/>
+          <path class="edge e-api" pathLength="1" d="M180 160 L64 118"/>
+          <path class="edge e-api" pathLength="1" d="M180 160 L30 168"/>
+          <path class="edge e-api" pathLength="1" d="M180 160 L64 222"/>
+          <path class="edge e-api" pathLength="1" d="M180 160 L100 272"/>
+          <path class="edge e-api" pathLength="1" d="M180 160 L108 190"/>
+          <path class="edge e-web" pathLength="1" d="M180 160 L324 76"/>
+          <path class="edge e-web" pathLength="1" d="M180 160 L300 140"/>
+          <path class="edge e-web" pathLength="1" d="M180 160 L326 214"/>
+          <path class="edge e-web" pathLength="1" d="M180 160 L270 276"/>
+        </g>
+        <g class="node">
+          <circle class="n-api" cx="36" cy="70" r="6"/><circle class="n-api" cx="64" cy="118" r="6"/><circle class="n-api" cx="30" cy="168" r="6"/>
+          <circle class="n-api" cx="64" cy="222" r="6"/><circle class="n-api" cx="100" cy="272" r="6"/><circle class="n-api" cx="108" cy="190" r="6"/>
+          <circle class="n-web" cx="324" cy="76" r="6"/><circle class="n-web" cx="300" cy="140" r="6"/><circle class="n-web" cx="326" cy="214" r="6"/><circle class="n-web" cx="270" cy="276" r="6"/>
+          <circle class="core" cx="180" cy="160" r="12"/>
+          <text class="c" x="180" y="122" text-anchor="middle">Login As</text>
+          <text x="14" y="26">shop-api-tests</text>
+          <text x="346" y="26" text-anchor="end" style="fill:var(--red)">shop-web-tests</text>
+        </g>
+      </svg>
     </div>
-    <div class="gkey"><span><i style="background:var(--ink)"></i>shop-api-tests</span><span><i style="background:var(--red)"></i>shop-web-tests</span><span>Nodes are coloured by repo. In the app, Open jumps to the file at that line.</span></div>
+    <div class="gkey"><span><i style="background:var(--ink)"></i>shop-api-tests</span><span><i style="background:var(--red)"></i>shop-web-tests</span><span>A drawing, not a screenshot: the app's real graph is on sheet 3. Nodes are coloured by repo.</span></div>
   </div>
 
   <div class="tb"><div class="t">robotframework-mind</div><div><b>Sheet</b>1 of 3</div><div><b>Rev</b>0.1.5</div><div><b>Scale</b>1 hit = 1 line</div></div>
@@ -286,6 +323,7 @@ test  Cases Page Opens For QC      <b>tests/cases.robot:13</b></pre>
     <div class="q"><h3>Where an endpoint is used</h3>
       <div class="row" style="--w:53.9%"><div class="span"><div class="dim hit"></div></div><div class="val"><b>2,879</b></div></div>
       <div class="row" style="--w:100%"><div class="span"><div class="dim"></div></div><div class="val">2,642,809</div></div></div>
+    <div class="axis" aria-hidden="true"><span class="tick" style="left:26.2%">100</span><span class="tick" style="left:39.2%">1K</span><span class="tick" style="left:52.3%">10K</span><span class="tick" style="left:65.4%">100K</span><span class="tick" style="left:78.5%">1M</span><span class="unit">characters, log scale</span></div>
   </div>
   <p class="note"><b>Note 1.</b> Method is in the <a href="https://github.com/ai94iq/robotframework-mind#how-it-compares">README</a>.</p>
   <div class="tb"><div class="t">Reading load</div><div><b>Sheet</b>2 of 3</div><div><b>Rev</b>0.1.5</div><div><b>Scale</b>log, chars</div></div>
@@ -321,8 +359,8 @@ python -m robot_mind_app</pre></li>
     <div class="detail wide">
       <div class="dhead caps"><span>View B: desktop app, for people</span><span>Sample repos</span></div>
       <div class="shots">
-        <figure><img src="screenshots/table.png" width="2400" height="1539" loading="lazy" alt="The app listing 18 tests tagged role:shopper across three repos, with kind, name, file and line, and tags"><figcaption>Table, light theme</figcaption></figure>
-        <figure><img src="screenshots/graph.png" width="2400" height="1159" loading="lazy" alt="The app showing a search for /api/orders as a graph of 31 nodes, coloured by repo"><figcaption>Graph, dark theme</figcaption></figure>
+        <figure><picture><source media="(prefers-color-scheme: dark)" srcset="screenshots/table-dark.png"><img src="screenshots/table.png" width="2400" height="1539" loading="lazy" alt="The app listing 18 tests tagged role:shopper across three repos, with kind, name, file and line, and tags"></picture><figcaption>Table</figcaption></figure>
+        <figure><picture><source media="(prefers-color-scheme: dark)" srcset="screenshots/graph-dark.png"><img src="screenshots/graph.png" width="2400" height="1324" loading="lazy" alt="The app showing a search for /api/orders as a graph of 31 nodes, coloured by repo"></picture><figcaption>Graph</figcaption></figure>
       </div>
     </div>
   </div>
