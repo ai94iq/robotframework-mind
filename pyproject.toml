@@ -8,11 +8,29 @@ dynamic = ["version"]
 description = "Exact lookups over a Robot Framework test repo: CLI and desktop UI"
 readme = "README.md"
 requires-python = ">=3.10"
+authors = [{ name = "Abdulwahab Isam" }]
+keywords = ["robotframework", "robot-framework", "test-automation", "code-search", "ticket", "keyword"]
 dependencies = ["robotframework>=7"]
+classifiers = [
+    "Framework :: Robot Framework",
+    "Framework :: Robot Framework :: Tool",
+    "Topic :: Software Development :: Testing",
+    "Environment :: Console",
+    "Environment :: X11 Applications :: Qt",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3 :: Only",
+    "Operating System :: OS Independent",
+]
 
 [project.optional-dependencies]
 gui = ["PySide6-Essentials>=6.12.0"]
 dev = ["pytest>=9"]
+
+[project.urls]
+Homepage = "https://ai94iq.github.io/robotframework-mind/"
+Source = "https://github.com/ai94iq/robotframework-mind"
+Issues = "https://github.com/ai94iq/robotframework-mind/issues"
+Releases = "https://github.com/ai94iq/robotframework-mind/releases"
 
 [project.gui-scripts]
 robot-mind-gui = "robot_mind_app.__main__:main"

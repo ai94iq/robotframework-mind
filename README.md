@@ -58,9 +58,9 @@ The same lookups in a window. Pick a repo (or a folder that holds several),
 choose what to search for, and get the hits as a table or as a graph of what
 they call, use and hit. Open takes you to the file at the line in your editor.
 
-![Results table](docs/screenshots/table.png)
+![Results table](https://raw.githubusercontent.com/ai94iq/robotframework-mind/main/docs/screenshots/table.png)
 
-![Graph of who calls a keyword, coloured by repo](docs/screenshots/graph.png)
+![Graph of a search, coloured by repo](https://raw.githubusercontent.com/ai94iq/robotframework-mind/main/docs/screenshots/graph.png)
 
 Install it from PyPI (see Install above), download a build from the releases
 page, or run it from source:
