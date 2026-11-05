@@ -112,6 +112,10 @@ as well. Files over the size cap are skipped: 5 MB for `docs/` JSON, 50 MB for
 python -m unittest tests.test_where
 ```
 
+## License
+
+MIT, see [LICENSE](https://github.com/ai94iq/robotframework-mind/blob/main/LICENSE).
+
 ## Credits
 
 The parsing approach follows the Robot Framework extractor in

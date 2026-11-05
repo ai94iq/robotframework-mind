@@ -7,6 +7,8 @@ name = "robotframework-mind"
 dynamic = ["version"]
 description = "Exact lookups over a Robot Framework test repo: CLI and desktop UI"
 readme = "README.md"
+license = "MIT"
+license-files = ["LICENSE", "NOTICE"]
 requires-python = ">=3.10"
 authors = [{ name = "Abdulwahab Isam" }]
 keywords = ["robotframework", "robot-framework", "test-automation", "code-search", "ticket", "keyword"]
