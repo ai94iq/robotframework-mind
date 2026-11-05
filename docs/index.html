@@ -1,0 +1,362 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>robotframework-mind: exact lookups over Robot Framework repos</title>
+<meta name="description" content="Ask which tests cover a ticket, who calls a keyword or where an endpoint is used, and get one file:line per hit. A CLI for agents and a desktop app for people.">
+<meta name="color-scheme" content="light dark">
+<style>
+:root {
+  color-scheme: light dark;
+  --ground: #f4f5f6; --panel: #ffffff; --well: #eceef0; --ink: #14171a; --ink2: #3a4046; --ink3: #656c75;
+  --line: #14171a; --red: #c42d17; --code-bg: #14171a; --code-ink: #f4f5f6;
+  --sans: Bahnschrift, "DIN Alternate", "Roboto Condensed", "Segoe UI Variable Text", "Segoe UI", system-ui, -apple-system, sans-serif;
+  --mono: "Cascadia Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --ground: #0e1013; --panel: #15181d; --well: #1c2026; --ink: #eceef1; --ink2: #b9bfc8; --ink3: #8c94a0;
+    --line: #dfe3e8; --red: #ff6a4d; --code-bg: #07080a; --code-ink: #eceef1;
+  }
+}
+*, *::before, *::after { box-sizing: border-box; }
+html { scroll-behavior: smooth; }
+body { margin: 0; background: var(--ground); color: var(--ink); font: 16px/1.55 var(--sans); -webkit-font-smoothing: antialiased; }
+::selection { background: var(--red); color: var(--ground); }
+a { color: inherit; text-decoration-thickness: 1px; text-underline-offset: 3px; }
+a:hover { color: var(--red); }
+:focus-visible { outline: 2px solid var(--red); outline-offset: 3px; }
+code, pre, .mono { font-family: var(--mono); }
+h1, h2, h3, p { margin: 0; }
+.caps { text-transform: uppercase; letter-spacing: .14em; font-size: .72rem; color: var(--ink3); }
+.red { color: var(--red); }
+
+/* a drawing sheet: double border, zone letters and numbers in the margin */
+.sheet { position: relative; width: min(1240px, 100% - 32px); margin: 24px auto; padding: 40px 28px 28px 44px; border: 2px solid var(--line); background: var(--ground); }
+.sheet::before { content: ""; position: absolute; inset: 6px; border: 1px solid var(--line); pointer-events: none; }
+.zones, .rows { position: absolute; display: flex; color: var(--ink3); font: .75rem var(--mono); pointer-events: none; }
+.zones { left: 44px; right: 28px; justify-content: space-around; }
+.zones.top { top: 14px; } .zones.bot { bottom: 12px; }
+.rows { left: 14px; top: 40px; bottom: 28px; flex-direction: column; justify-content: space-around; }
+.sheet > :not(.zones):not(.rows) { position: relative; }
+
+/* header */
+.bar { display: flex; justify-content: space-between; align-items: center; gap: 12px 24px; flex-wrap: wrap; padding-bottom: 14px; border-bottom: 1px solid var(--line); }
+.brand { display: inline-flex; align-items: center; gap: 10px; font-weight: 700; text-decoration: none; letter-spacing: .04em; text-transform: uppercase; }
+.brand svg { width: 26px; height: 26px; color: var(--red); }
+nav { display: flex; flex-wrap: wrap; gap: 4px; }
+nav a { text-decoration: none; padding: 8px 12px; min-height: 36px; display: inline-flex; align-items: center; font-size: .88rem; letter-spacing: .08em; text-transform: uppercase; color: var(--ink2); }
+nav a:hover { color: var(--red); }
+
+/* hero */
+.hero { display: grid; grid-template-columns: minmax(0, 1.15fr) minmax(0, 1fr); gap: 44px; padding: 40px 0 36px; align-items: start; }
+h1 { font-size: clamp(2.6rem, 6.4vw, 5.4rem); line-height: .95; font-weight: 700; text-transform: uppercase; letter-spacing: -.01em; text-wrap: balance; }
+.lede { margin-top: 22px; font-size: 1.15rem; color: var(--ink2); max-width: 32em; }
+.lede .mono { font-size: .95em; color: var(--ink); }
+.actions { margin-top: 28px; display: flex; flex-wrap: wrap; gap: 12px; }
+.btn { display: inline-flex; align-items: center; gap: 10px; min-height: 46px; padding: 0 18px; border: 2px solid var(--line); background: transparent; color: var(--ink); font: 600 .95rem var(--sans); text-decoration: none; cursor: pointer; transition: background .15s, color .15s, transform .15s; }
+.btn:hover { background: var(--ink); color: var(--ground); transform: translateY(-1px); }
+.btn:active { transform: none; }
+.btn.fill { background: var(--ink); color: var(--ground); font: 500 .9rem var(--mono); }
+.btn.fill:hover { background: var(--red); border-color: var(--red); color: var(--ground); }
+.btn svg { width: 18px; height: 18px; flex: none; }
+.copied { min-height: 1.4em; margin-top: 10px; font-size: .88rem; color: var(--red); }
+
+/* framed detail with numbered callouts */
+.detail { border: 1.5px solid var(--line); background: var(--panel); }
+.dhead { display: flex; justify-content: space-between; gap: 12px; padding: 9px 14px; border-bottom: 1.5px solid var(--line); }
+.detail pre { margin: 0; padding: 20px 20px 22px 24px; font-size: .82rem; line-height: 1.85; white-space: pre-wrap; overflow-wrap: break-word; }
+.detail pre .d { color: var(--ink3); }
+.detail pre b { font-weight: 700; }
+.callouts { margin: 18px 0 0; padding: 0; list-style: none; display: grid; gap: 8px; font-size: .9rem; color: var(--ink2); }
+.callouts li { display: flex; gap: 10px; align-items: center; }
+.n { flex: none; display: inline-grid; place-items: center; width: 22px; height: 22px; border: 1.5px solid var(--red); border-radius: 50%; color: var(--red); font: 600 .72rem var(--sans); background: var(--ground); }
+
+/* the call graph, drawn as a detail view */
+.graph { margin-top: 4px; }
+.gwrap { overflow-x: auto; }
+.gsvg { display: block; width: 100%; min-width: 760px; height: auto; }
+.gsvg text { font: 13px var(--mono); fill: var(--ink); }
+.gsvg .c { font: 700 15px var(--sans); letter-spacing: .02em; }
+.gsvg .sub { fill: var(--ink3); font-size: 11px; }
+.gsvg .edge { fill: none; stroke-width: 1.5; }
+.gsvg .e-api { stroke: var(--ink); opacity: .6; }
+.gsvg .e-web { stroke: var(--red); opacity: .8; }
+.gsvg .n-api { fill: var(--ink); }
+.gsvg .n-web { fill: var(--red); }
+.gsvg .core { fill: var(--ground); stroke: var(--red); stroke-width: 2.5; }
+.gsvg .ring { fill: none; stroke: var(--red); stroke-width: 1; stroke-dasharray: 3 4; }
+.gkey { display: flex; flex-wrap: wrap; gap: 6px 22px; padding: 10px 14px; border-top: 1.5px solid var(--line); font-size: .84rem; color: var(--ink2); }
+.gkey i { display: inline-block; width: 10px; height: 10px; border-radius: 50%; margin-right: 8px; }
+.js .gsvg .edge { stroke-dasharray: 1; stroke-dashoffset: 1; }
+.js .gsvg .node { opacity: 0; }
+.js .in .gsvg .edge { stroke-dashoffset: 0; transition: stroke-dashoffset 1s cubic-bezier(.16, 1, .3, 1) .15s; }
+.js .in .gsvg .node { opacity: 1; transition: opacity .5s ease .6s; }
+
+/* sheets 2 and 3 */
+.sec-head { padding: 28px 0 18px; }
+h2 { font-size: clamp(1.9rem, 4.2vw, 3.2rem); line-height: 1; font-weight: 700; text-transform: uppercase; text-wrap: balance; }
+.sec-head p { margin-top: 14px; max-width: 46em; color: var(--ink2); }
+.sec-head .caps { display: block; margin-bottom: 10px; }
+
+.dims { display: grid; gap: 26px; margin-top: 8px; padding: 8px 0 28px; }
+.q h3 { font-size: 1.02rem; font-weight: 600; margin-bottom: 8px; }
+.row { display: flex; align-items: center; gap: 12px; margin-top: 6px; }
+.span { flex: 0 1 calc(var(--w) * .84); height: 18px; min-width: 0; }
+.dim { position: relative; height: 18px; width: 100%; border-inline: 1.5px solid var(--line); transform-origin: left; }
+.dim::after { content: ""; position: absolute; left: 10px; right: 10px; top: 50%; height: 0; border-top: 2px solid var(--line); }
+.dim::before { content: ""; position: absolute; left: 1px; top: 4px; width: 0; height: 0; border: 5px solid transparent; border-left: 0; border-right: 9px solid var(--line); }
+.dim.hit { border-color: var(--red); }
+.dim.hit::after { border-top: 3px solid var(--red); }
+.dim.hit::before { border-right-color: var(--red); }
+.val { flex: none; font: .82rem var(--mono); text-align: left; font-variant-numeric: tabular-nums; color: var(--ink2); }
+.val b { color: var(--red); font-weight: 700; }
+.js .dim { transform: scaleX(0); }
+.js .in .dim { transform: scaleX(1); transition: transform .9s cubic-bezier(.16, 1, .3, 1); }
+.js .in .q:nth-child(2) .dim { transition-delay: .08s; }
+.js .in .q:nth-child(3) .dim { transition-delay: .16s; }
+.js .in .q:nth-child(4) .dim { transition-delay: .24s; }
+.js .in .q:nth-child(5) .dim { transition-delay: .32s; }
+.legend { display: flex; flex-wrap: wrap; gap: 8px 22px; font-size: .85rem; color: var(--ink2); }
+.legend i { display: inline-block; width: 22px; border-top: 3px solid var(--line); vertical-align: middle; margin-right: 8px; }
+.legend i.hit { border-color: var(--red); }
+.note { margin-top: 4px; font-size: .86rem; color: var(--ink3); max-width: 52em; }
+
+.views { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 28px; padding-bottom: 12px; align-items: start; }
+.table-wrap { overflow-x: auto; }
+table { width: 100%; border-collapse: collapse; font-size: .92rem; }
+th, td { text-align: left; padding: 9px 14px; border-top: 1px solid var(--line); vertical-align: top; }
+thead th { background: var(--well); border-top: 0; font-weight: 600; }
+td:first-child { width: 3.2em; color: var(--ink3); }
+td.mono { color: var(--ink); white-space: nowrap; }
+.shots { display: grid; }
+.shots figure { margin: 0; }
+.shots figure + figure { border-top: 1.5px solid var(--line); }
+.shots img { display: block; width: 100%; height: auto; }
+.shots figcaption { padding: 8px 12px; font-size: .78rem; color: var(--ink3); border-top: 1.5px solid var(--line); }
+.cap-row { padding: 12px 14px; border-top: 1.5px solid var(--line); font-size: .9rem; color: var(--ink2); }
+.views .wide { grid-column: 1 / -1; }
+.notes ol { margin: 0; padding: 14px 18px 16px 40px; display: grid; gap: 6px; font-size: .92rem; color: var(--ink2); }
+.notes li::marker { color: var(--red); font-weight: 700; }
+.notes pre { margin: 6px 0 0; padding: 10px 12px; background: var(--code-bg); color: var(--code-ink); font-size: .8rem; line-height: 1.7; overflow-x: auto; }
+
+/* title block, always in flow below the content, bottom right */
+.tb { position: relative; z-index: 1; margin: 28px 0 0 auto; width: min(480px, 100%); display: grid; grid-template-columns: 1.6fr 1fr 1fr; border: 1.5px solid var(--line); background: var(--ground); }
+.tb div { padding: 6px 10px; border: .75px solid var(--line); font-size: .74rem; line-height: 1.3; }
+.tb b { display: block; font-weight: 500; font-size: .72rem; letter-spacing: .1em; text-transform: uppercase; color: var(--ink3); }
+.tb .t { grid-column: 1 / -1; font-size: 1.15rem; font-weight: 600; letter-spacing: .02em; padding: 8px 10px; }
+
+footer { width: min(1240px, 100% - 32px); margin: 0 auto 40px; display: flex; flex-wrap: wrap; justify-content: space-between; gap: 8px 24px; color: var(--ink3); font-size: .86rem; }
+
+@media (max-width: 980px) {
+  .hero, .views { grid-template-columns: minmax(0, 1fr); gap: 30px; }
+  .views .wide { grid-column: auto; }
+}
+@media (max-width: 720px) {
+  .sheet { padding: 28px 18px 20px; width: calc(100% - 16px); margin: 8px auto; }
+  .zones, .rows { display: none; }
+  .btn.fill { font-size: .78rem; padding: 0 12px; }
+  .tb { grid-template-columns: 1fr 1fr; }
+  .tb .t { grid-column: 1 / -1; }
+}
+@media (prefers-reduced-motion: reduce) {
+  html { scroll-behavior: auto; }
+  .js .dim, .js .in .dim { transform: none; transition: none; }
+  .js .gsvg .edge, .js .in .gsvg .edge { stroke-dashoffset: 0; transition: none; }
+  .js .gsvg .node, .js .in .gsvg .node { opacity: 1; transition: none; }
+  .btn { transition: none; }
+}
+</style>
+</head>
+<body>
+<script>document.documentElement.classList.add('js')</script>
+
+<!-- Sheet 1 -->
+<div class="sheet" id="top">
+  <div class="zones top" aria-hidden="true"><span>A</span><span>B</span><span>C</span><span>D</span><span>E</span><span>F</span><span>G</span><span>H</span></div>
+  <div class="rows" aria-hidden="true"><span>1</span><span>2</span><span>3</span><span>4</span></div>
+
+  <div class="bar">
+    <a class="brand" href="#top">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="4" y="8" width="16" height="11" rx="3"/><path d="M12 8V5"/><circle cx="12" cy="4" r="1"/><path d="M9 13v1.5M15 13v1.5"/><path d="M2 13v3M22 13v3"/></svg>
+      robotframework-mind
+    </a>
+    <nav aria-label="Main">
+      <a href="#tokens">Tokens</a><a href="#ways">CLI and app</a><a href="https://github.com/ai94iq/robotframework-mind">GitHub</a><a href="https://pypi.org/project/robotframework-mind/">PyPI</a>
+    </nav>
+  </div>
+
+  <div class="hero">
+    <div>
+      <h1>Ask the repo. Get a <span class="red">line.</span></h1>
+      <p class="lede">One <span class="mono">file:line</span> per hit, so people and agents stop reading whole suites.</p>
+      <div class="actions">
+        <button class="btn fill" type="button" data-copy="pip install robotframework-mind[gui]">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V6a2 2 0 0 1 2-2h9"/></svg>
+          pip install robotframework-mind[gui]
+        </button>
+        <a class="btn" href="https://github.com/ai94iq/robotframework-mind/releases/latest">Download the app</a>
+      </div>
+      <p class="copied" role="status" aria-live="polite"></p>
+    </div>
+    <div>
+      <div class="detail">
+        <div class="dhead caps"><span>Detail A</span><span>Sample repo, real output</span></div>
+<pre><span class="d">$</span> python -m robot_mind --root . ticket PROJ-2120
+test  Change Zone NEW Lists Zones  <b>tests/cases.robot:6</b>
+      <span class="d">[bug:PROJ-2120 role:role_team_lead op:GET /api/zones/list]</span>
+
+<span class="d">$</span> python -m robot_mind --root . callers "Open Cases Page"
+test  Change Zone NEW Lists Zones  <b>tests/cases.robot:9</b>
+test  Cases Page Opens For QC      <b>tests/cases.robot:13</b></pre>
+      </div>
+      <ul class="callouts">
+        <li><span class="n">1</span> the command, run from the repo's own venv</li>
+        <li><span class="n">2</span> the file and line, one per hit</li>
+        <li><span class="n">3</span> tags and endpoint, no suite dump</li>
+      </ul>
+    </div>
+  </div>
+
+  <div class="detail graph" id="graph">
+    <div class="dhead caps"><span>Detail B: who calls Login As, as a graph</span><span>Sample repos</span></div>
+    <div class="gwrap">
+      <svg class="gsvg" viewBox="0 0 1000 380" role="img" aria-label="Graph of the keyword Login As in the middle, linked to six keywords and tests from the API repo and four from the web repo">
+        <circle class="ring" cx="500" cy="190" r="64"/>
+        <g class="edge-set">
+          <path class="edge e-api" pathLength="1" d="M500 190 L262 52"/>
+          <path class="edge e-api" pathLength="1" d="M500 190 L132 122"/>
+          <path class="edge e-api" pathLength="1" d="M500 190 L92 204"/>
+          <path class="edge e-api" pathLength="1" d="M500 190 L152 288"/>
+          <path class="edge e-api" pathLength="1" d="M500 190 L272 338"/>
+          <path class="edge e-api" pathLength="1" d="M500 190 L372 262"/>
+          <path class="edge e-web" pathLength="1" d="M500 190 L762 62"/>
+          <path class="edge e-web" pathLength="1" d="M500 190 L882 142"/>
+          <path class="edge e-web" pathLength="1" d="M500 190 L882 242"/>
+          <path class="edge e-web" pathLength="1" d="M500 190 L762 322"/>
+        </g>
+        <g class="node">
+          <circle class="n-api" cx="262" cy="52" r="7"/><text x="250" y="44" text-anchor="end">Cancel Order</text>
+          <circle class="n-api" cx="132" cy="122" r="7"/><text x="120" y="114" text-anchor="end">Open Cart</text>
+          <circle class="n-api" cx="92" cy="204" r="7"/><text x="92" y="228" text-anchor="middle">Refund Order</text>
+          <circle class="n-api" cx="152" cy="288" r="7"/><text x="140" y="312" text-anchor="end">${LOGIN_URL}</text>
+          <circle class="n-api" cx="272" cy="338" r="7"/><text x="260" y="362" text-anchor="end">Place Order</text>
+          <circle class="n-api" cx="372" cy="262" r="7"/><text x="372" y="286" text-anchor="middle">Check Status</text>
+          <circle class="n-web" cx="762" cy="62" r="7"/><text x="776" y="54">Web Open Cart</text>
+          <circle class="n-web" cx="882" cy="142" r="7"/><text x="882" y="124" text-anchor="middle">Web Refund Order</text>
+          <circle class="n-web" cx="882" cy="242" r="7"/><text x="882" y="270" text-anchor="middle">Web Cancel Order</text>
+          <circle class="n-web" cx="762" cy="322" r="7"/><text x="776" y="346">Web Place Order</text>
+          <circle class="core" cx="500" cy="190" r="14"/>
+          <text class="c" x="500" y="150" text-anchor="middle">Login As</text>
+          <text class="sub" x="500" y="236" text-anchor="middle">keyword</text>
+        </g>
+      </svg>
+    </div>
+    <div class="gkey"><span><i style="background:var(--ink)"></i>shop-api-tests</span><span><i style="background:var(--red)"></i>shop-web-tests</span><span>Nodes are coloured by repo. In the app, Open jumps to the file at that line.</span></div>
+  </div>
+
+  <div class="tb"><div class="t">robotframework-mind</div><div><b>Sheet</b>1 of 3</div><div><b>Rev</b>0.1.1</div><div><b>Scale</b>1 hit = 1 line</div></div>
+  <div class="zones bot" aria-hidden="true"><span>A</span><span>B</span><span>C</span><span>D</span><span>E</span><span>F</span><span>G</span><span>H</span></div>
+</div>
+
+<!-- Sheet 2 -->
+<div class="sheet" id="tokens">
+  <div class="zones top" aria-hidden="true"><span>A</span><span>B</span><span>C</span><span>D</span><span>E</span><span>F</span><span>G</span><span>H</span></div>
+  <div class="rows" aria-hidden="true"><span>1</span><span>2</span><span>3</span><span>4</span></div>
+  <div class="sec-head">
+    <span class="caps">Sheet 2: reading load</span>
+    <h2>Agents stop burning tokens on searching</h2>
+    <p>Characters read to answer one question on a real API test repo of 553 files. Shorter is cheaper.</p>
+  </div>
+  <div class="legend"><span><i class="hit"></i>robotframework-mind</span><span><i></i>grep, then open the files</span><span>characters of output, log scale</span></div>
+  <div class="dims" id="chart" role="group" aria-label="Characters of output per question, robotframework-mind against grep and opening the files, log scale">
+    <div class="q"><h3>Tests for a ticket</h3>
+      <div class="row" style="--w:49.8%"><div class="span"><div class="dim hit"></div></div><div class="val"><b>1,570</b></div></div>
+      <div class="row" style="--w:66.5%"><div class="span"><div class="dim"></div></div><div class="val">18,611</div></div></div>
+    <div class="q"><h3>Where a keyword is defined</h3>
+      <div class="row" style="--w:34.6%"><div class="span"><div class="dim hit"></div></div><div class="val"><b>167</b></div></div>
+      <div class="row" style="--w:86.3%"><div class="span"><div class="dim"></div></div><div class="val">346,452</div></div></div>
+    <div class="q"><h3>Who calls that keyword</h3>
+      <div class="row" style="--w:55.0%"><div class="span"><div class="dim hit"></div></div><div class="val"><b>3,411</b></div></div>
+      <div class="row" style="--w:86.3%"><div class="span"><div class="dim"></div></div><div class="val">346,452</div></div></div>
+    <div class="q"><h3>Tests with a tag</h3>
+      <div class="row" style="--w:71.8%"><div class="span"><div class="dim hit"></div></div><div class="val"><b>41,107</b></div></div>
+      <div class="row" style="--w:79.9%"><div class="span"><div class="dim"></div></div><div class="val">136,226</div></div></div>
+    <div class="q"><h3>Where an endpoint is used</h3>
+      <div class="row" style="--w:53.9%"><div class="span"><div class="dim hit"></div></div><div class="val"><b>2,879</b></div></div>
+      <div class="row" style="--w:100%"><div class="span"><div class="dim"></div></div><div class="val">2,642,809</div></div></div>
+  </div>
+  <p class="note"><b>Note 1.</b> Method is in the <a href="https://github.com/ai94iq/robotframework-mind#how-it-compares">README</a>.</p>
+  <div class="tb"><div class="t">Reading load</div><div><b>Sheet</b>2 of 3</div><div><b>Rev</b>0.1.1</div><div><b>Scale</b>log, chars</div></div>
+  <div class="zones bot" aria-hidden="true"><span>A</span><span>B</span><span>C</span><span>D</span><span>E</span><span>F</span><span>G</span><span>H</span></div>
+</div>
+
+<!-- Sheet 3 -->
+<div class="sheet" id="ways">
+  <div class="zones top" aria-hidden="true"><span>A</span><span>B</span><span>C</span><span>D</span><span>E</span><span>F</span><span>G</span><span>H</span></div>
+  <div class="rows" aria-hidden="true"><span>1</span><span>2</span><span>3</span><span>4</span></div>
+  <div class="sec-head"><span class="caps">Sheet 3: assembly</span><h2>Two views, one engine</h2></div>
+  <div class="views">
+      <div class="detail">
+        <div class="dhead caps"><span>View A: command line, for agents and scripts</span></div>
+        <div class="table-wrap"><table>
+          <thead><tr><th>Item</th><th>Command</th><th>Returns</th></tr></thead>
+          <tbody>
+            <tr><td>1</td><td class="mono">ticket KEY</td><td>tests that cover it</td></tr>
+            <tr><td>2</td><td class="mono">kw NAME</td><td>where it is defined</td></tr>
+            <tr><td>3</td><td class="mono">callers NAME</td><td>every call site</td></tr>
+            <tr><td>4</td><td class="mono">tag TAG</td><td>tests with the tag</td></tr>
+            <tr><td>5</td><td class="mono">find TEXT</td><td>endpoint, variable, value</td></tr>
+          </tbody></table></div>
+      </div>
+      <div class="detail notes">
+        <div class="dhead caps"><span>General notes</span></div>
+        <ol>
+          <li>Install, then start the app:<pre>pip install robotframework-mind[gui]
+python -m robot_mind_app</pre></li>
+          <li>Windows, Mac and Linux builds: <a href="https://github.com/ai94iq/robotframework-mind/releases/latest">releases</a> (unsigned).</li>
+        </ol>
+      </div>
+    <div class="detail wide">
+      <div class="dhead caps"><span>View B: desktop app, for people</span><span>Sample repos</span></div>
+      <div class="shots">
+        <figure><img src="screenshots/table.png" width="2400" height="1539" loading="lazy" alt="The app listing 18 tests tagged role:shopper across three repos, with kind, name, file and line, and tags"><figcaption>Table, light theme</figcaption></figure>
+        <figure><img src="screenshots/graph.png" width="2400" height="1159" loading="lazy" alt="The app showing a search for /api/orders as a graph of 31 nodes, coloured by repo"><figcaption>Graph, dark theme</figcaption></figure>
+      </div>
+    </div>
+  </div>
+  <div class="tb"><div class="t">Assembly</div><div><b>Sheet</b>3 of 3</div><div><b>Rev</b>0.1.1</div><div><b>Scale</b>1:1</div></div>
+  <div class="zones bot" aria-hidden="true"><span>A</span><span>B</span><span>C</span><span>D</span><span>E</span><span>F</span><span>G</span><span>H</span></div>
+</div>
+
+<footer>
+  <span>Credits: the parsing approach follows graphify, see <a href="https://github.com/ai94iq/robotframework-mind/blob/main/NOTICE">NOTICE</a>.</span>
+  <span><a href="https://github.com/ai94iq/robotframework-mind">GitHub</a> &middot; <a href="https://pypi.org/project/robotframework-mind/">PyPI</a></span>
+</footer>
+
+<script>
+(function () {
+  ['chart', 'graph'].forEach(function (id) {
+    var el = document.getElementById(id);
+    if (!el) return;
+    if ('IntersectionObserver' in window) {
+      var io = new IntersectionObserver(function (es) {
+        es.forEach(function (e) { if (e.isIntersecting) { el.classList.add('in'); io.disconnect(); } });
+      }, { threshold: 0.2 });
+      io.observe(el);
+    } else { el.classList.add('in'); }
+  });
+
+  var status = document.querySelector('.copied');
+  document.querySelectorAll('[data-copy]').forEach(function (b) {
+    b.addEventListener('click', function () {
+      var done = function () { status.textContent = 'Copied. Paste it in the repo’s venv.'; setTimeout(function () { status.textContent = ''; }, 3500); };
+      var fail = function () { status.textContent = 'Select the text and copy it.'; };
+      if (navigator.clipboard) { navigator.clipboard.writeText(b.getAttribute('data-copy')).then(done, fail); } else { fail(); }
+    });
+  });
+})();
+</script>
+</body>
+</html>
