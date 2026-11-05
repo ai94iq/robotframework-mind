@@ -12,14 +12,25 @@ It indexes:
 - suite and test setup/teardown calls
 - JSON files under `docs/`, one entry per object key
 
+## Install
+
+From [PyPI](https://pypi.org/project/robotframework-mind/), in the test repo's
+venv:
+
+```bash
+pip install robotframework-mind        # the CLI: python -m robot_mind
+pip install robotframework-mind[gui]   # also the desktop app: python -m robot_mind_app
+```
+
 ## Requirements
 
 Python 3.10+ and `robotframework` (the repo's own venv already has it). No
-other packages.
+other packages for the CLI.
 
 ## Run
 
-From the test repo's venv:
+From the test repo's venv (`python -m robot_mind` in place of
+`python path/to/robot_mind.py` once it is installed):
 
 ```bash
 python path/to/robot_mind.py --root <repo> ticket PROJ-123
@@ -51,7 +62,8 @@ they call, use and hit. Open takes you to the file at the line in your editor.
 
 ![Graph of who calls a keyword, coloured by repo](docs/screenshots/graph.png)
 
-Download a build from the releases page, or run it from source:
+Install it from PyPI (see Install above), download a build from the releases
+page, or run it from source:
 
 ```bash
 pip install -e .[gui]
