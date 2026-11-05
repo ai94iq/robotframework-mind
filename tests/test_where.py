@@ -79,15 +79,35 @@ class WhereTests(unittest.TestCase):
         self.assertEqual(len(body), 2)
         self.assertIn("more, raise --limit", out)
 
-    def test_git_ignored_files_are_left_out_in_a_git_repo(self):
-        probe = self.root / "probes" / "scratch.robot"
-        probe.parent.mkdir()
-        probe.write_text("*** Keywords ***\nThrowaway Probe Keyword\n    Log    x\n")
-        (self.root / ".gitignore").write_text("probes/\n")
-        for cmd in (["init", "-q"], ["add", "."]):
-            subprocess.run(["git", *cmd], cwd=self.root, check=True)
+    def probe_keyword(self, rel, name):
+        path = self.root / rel
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(f"*** Keywords ***\n{name}\n    Log    x\n")
+
+    def test_gitignored_folder_is_left_out(self):
+        self.probe_keyword("probes/scratch.robot", "Throwaway Probe Keyword")
+        (self.root / ".gitignore").write_text("# scratch\nprobes/\n")
         self.assertEqual(self.where("kw", "Throwaway Probe Keyword").strip(), "no match")
         self.assertIn("resources/common.resource:11", self.where("kw", "Open Profile Browser"))
+
+    def test_gitignore_negation_keeps_a_file(self):
+        self.probe_keyword("tmp/a.robot", "Dropped Keyword")
+        self.probe_keyword("tmp/keep.robot", "Kept Keyword")
+        (self.root / ".gitignore").write_text("tmp/*.robot\n!tmp/keep.robot\n")
+        self.assertEqual(self.where("kw", "Dropped Keyword").strip(), "no match")
+        self.assertIn("tmp/keep.robot", self.where("kw", "Kept Keyword"))
+
+    def test_gitignore_glob_matches_any_depth(self):
+        self.probe_keyword("a/b/c.draft.robot", "Draft Keyword")
+        (self.root / ".gitignore").write_text("*.draft.robot\n")
+        self.assertEqual(self.where("kw", "Draft Keyword").strip(), "no match")
+
+    def test_anchored_gitignore_stays_at_its_folder(self):
+        self.probe_keyword("out/top.robot", "Top Out Keyword")
+        self.probe_keyword("sub/out/deep.robot", "Deep Out Keyword")
+        (self.root / ".gitignore").write_text("/out\n")
+        self.assertEqual(self.where("kw", "Top Out Keyword").strip(), "no match")
+        self.assertIn("sub/out/deep.robot", self.where("kw", "Deep Out Keyword"))
 
     def test_callers_lines_leave_out_docs(self):
         out = self.where("callers", "Open Authenticated Browser")
@@ -100,14 +120,20 @@ class WhereTests(unittest.TestCase):
         shutil.copytree(FIXTURE, repo_a)
         shutil.copytree(FIXTURE, repo_b)
         (repo_b / ".gitignore").write_text("collections/\n")
+        (workspace / ".gitignore").write_text("repo-a/\n")          # a nested repo keeps only its own rules
         for repo in (repo_a, repo_b):
-            for cmd in (["init", "-q"], ["add", "."]):
-                subprocess.run(["git", *cmd], cwd=repo, check=True)
+            (repo / ".git").mkdir()
         out = run(["kw", "Open Cases Page"], root=workspace, cache_dir=self.cache)
         self.assertIn("repo-a/collections/cases_page.resource:9", out)
         self.assertNotIn("repo-b", out)
         self.assertIn("group/repo-b/tests/cases.robot:6",
                       run(["ticket", "PROJ-2120"], root=workspace, cache_dir=self.cache))
+
+    def test_find_repos_lists_nested_repos(self):
+        workspace = self.tmp / "ws"
+        for rel in ("repo-a", "group/repo-b", "repo-a/inner"):
+            (workspace / rel / ".git").mkdir(parents=True)
+        self.assertEqual(robot_mind.find_repos(workspace), ["group/repo-b", "repo-a"])
 
     def test_json_top_level_values_print_without_a_stray_equals(self):
         out = self.where("find", "principals")
@@ -146,9 +172,6 @@ class WhereTests(unittest.TestCase):
 
     def test_no_match_says_so(self):
         self.assertEqual(self.where("ticket", "PROJ-9999").strip(), "no match")
-
-    def test_git_file_names_tolerate_non_utf8_bytes(self):
-        self.assertEqual(robot_mind.ls_names(b"a\xffb\x00c"), ["a\ufffdb", "c"])
 
     def test_robot_files_over_the_size_cap_are_skipped(self):
         root = self.tmp / "big"

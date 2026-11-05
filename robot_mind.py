@@ -13,13 +13,12 @@ import hashlib
 import json
 import os
 import re
-import subprocess
 import sys
-from concurrent.futures import ThreadPoolExecutor
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
 
 ROBOT_EXTS = {".robot", ".resource"}
+SOURCE_EXTS = ROBOT_EXTS | {".json"}
 SKIP_DIRS = {".git", ".venv", "venv", "node_modules", "results", "__pycache__", "graphify-out"}
 JSON_DIR = "docs"
 JSON_MAX_BYTES = 5_000_000
@@ -200,41 +199,96 @@ def parse_file(path: Path, rel: str) -> list[Entry]:
 
 # ---------------------------------------------------------------- index + cache
 
-def git_files(repo: Path) -> list[Path] | None:
-    """Tracked and untracked-but-not-ignored files of the repo holding `repo`; None outside git."""
-    try:
-        out = subprocess.run(["git", "ls-files", "-z", "--cached", "--others", "--exclude-standard"],
-                             cwd=repo, capture_output=True, check=True).stdout
-    except (OSError, subprocess.CalledProcessError):
+@dataclass(frozen=True)
+class IgnoreRule:
+    base: str                     # posix path of the folder whose .gitignore holds the rule, ending in /
+    pattern: re.Pattern
+    negate: bool
+    dir_only: bool
+
+
+def glob_regex(glob: str) -> str:
+    """A .gitignore glob as a regex: ** crosses folders, * and ? stay inside one."""
+    parts = {"**/": "(?:.*/)?", "**": ".*", "*": "[^/]*", "?": "[^/]"}
+    out, i = [], 0
+    while i < len(glob):
+        token = next((t for t in parts if glob.startswith(t, i)), None)
+        out.append(parts[token] if token else re.escape(glob[i]))
+        i += len(token) if token else 1
+    return "".join(out)
+
+
+def ignore_rule(base: str, line: str) -> IgnoreRule | None:
+    """One .gitignore line; None for blanks and comments. A slash before the end anchors it to base."""
+    line = line.rstrip()
+    if not line or line.startswith("#"):
         return None
-    return [repo / p for p in ls_names(out)]
+    negate = line.startswith("!")
+    body = line[1:] if negate else line
+    dir_only = body.endswith("/")
+    body = body.rstrip("/")
+    regex = glob_regex(body.lstrip("/"))
+    return IgnoreRule(base, re.compile(regex if "/" in body else f"(?:.*/)?{regex}"), negate, dir_only)
 
 
-def ls_names(raw: bytes) -> list[str]:
-    """Split NUL-separated git ls-files output, tolerating names that are not valid UTF-8."""
-    return [p for p in raw.decode("utf-8", errors="replace").split("\0") if p]
+def ignore_rules(folder: str) -> list[IgnoreRule]:
+    """The rules a folder (posix path ending in /) adds: its .gitignore, and .git/info/exclude at a repo root."""
+    rules = []
+    for name in (".gitignore", ".git/info/exclude"):
+        try:
+            text = Path(folder + name).read_text(encoding="utf-8", errors="replace")
+        except OSError:
+            continue
+        rules += [rule for line in text.splitlines() if (rule := ignore_rule(folder, line))]
+    return rules
+
+
+def is_ignored(rules: list[IgnoreRule], path: str, is_dir: bool) -> bool:
+    """The last matching rule decides, as in git. path is posix and lies under every rule's base."""
+    ignored = False
+    for rule in rules:
+        if (is_dir or not rule.dir_only) and rule.pattern.fullmatch(path, len(rule.base)):
+            ignored = not rule.negate
+    return ignored
 
 
 def candidate_files(root: Path) -> list[Path]:
-    """One repo: its git files. A folder of repos: each nested repo by its own git rules,
-    plus the loose files around them."""
-    inside = git_files(root)
-    if inside is not None:
-        return inside
+    """Robot and JSON files under root minus SKIP_DIRS, hidden folders and what each .gitignore on the way
+    leaves out. A nested repo (a folder with .git) starts over with only its own rules."""
     found: list[Path] = []
-    repos: list[Path] = []
+    inherited: dict[str, list[IgnoreRule]] = {root.as_posix().rstrip("/") + "/": []}
     for dirpath, dirnames, filenames in os.walk(root):
+        here = dirpath.replace("\\", "/").rstrip("/") + "/"
+        parent = inherited.pop(here)
+        rules = ([] if os.path.exists(here + ".git") else parent) + ignore_rules(here)
+        dirnames[:] = [d for d in dirnames if d not in SKIP_DIRS and not d.startswith(".")
+                       and (os.path.exists(here + d + "/.git") or not is_ignored(rules, here + d, True))]
+        inherited.update((here + d + "/", rules) for d in dirnames)
+        found += [Path(here + name) for name in filenames
+                  if os.path.splitext(name)[1] in SOURCE_EXTS and not is_ignored(rules, here + name, False)]
+    return found
+
+
+def find_repos(root: Path) -> list[str]:
+    """Posix paths, relative to root, of the repos (folders with .git) inside it; a repo's own inner repos
+    are not listed. Sorted."""
+    repos: list[str] = []
+    for dirpath, dirnames, _files in os.walk(root):
         here = Path(dirpath)
-        if (here / ".git").exists() and here != root:
-            repos.append(here)
+        if here != root and (here / ".git").exists():
+            repos.append(here.relative_to(root).as_posix())
             dirnames[:] = []
             continue
         dirnames[:] = [d for d in dirnames if d not in SKIP_DIRS and not d.startswith(".")]
-        found += [here / name for name in filenames]
-    with ThreadPoolExecutor(max_workers=8) as pool:   # git calls are I/O bound
-        for files in pool.map(git_files, repos):
-            found += files or []
-    return found
+    return sorted(repos)
+
+
+def in_scope(entries: list[Entry], scope: list[str] | None) -> list[Entry]:
+    """Entries under one of the scope folders (posix, relative to the root); all of them when scope is None."""
+    if scope is None:
+        return entries
+    prefixes = tuple(folder.rstrip("/") + "/" for folder in scope)
+    return [e for e in entries if e.file.startswith(prefixes)]
 
 
 def source_files(root: Path) -> list[Path]:
@@ -343,15 +397,25 @@ def fmt_hit(h: Hit) -> str:
     return strip_controls(head if h.call_line else head + SUFFIX.get(h.kind, lambda _: "")(h))
 
 
+def default_cache() -> Path:
+    return Path.home() / ".cache" / "robotframework-mind"
+
+
+def lookup(entries: list[Entry], command: str, term: str) -> list[tuple[Entry, int]]:
+    """Matching entries, each with its call-site line for callers and 0 otherwise."""
+    if command == "callers":
+        return q_callers(entries, term)
+    fn = {"ticket": q_ticket, "kw": q_kw, "tag": q_tag, "find": q_find}[command]
+    return [(e, 0) for e in fn(entries, term)]
+
+
+def to_hits(matches: list[tuple[Entry, int]]) -> list[Hit]:
+    return [Hit(e.kind, e.name, e.file, e.line, e.tags, e.args, e.doc, e.value, line) for e, line in matches]
+
+
 def query(root: Path, command: str, term: str, cache_dir: Path | None = None) -> list[Hit]:
     """Structured hits for one lookup; the shared entry point for the CLI and the desktop app."""
-    entries = load_index(root, cache_dir or Path.home() / ".cache" / "robotframework-mind")
-    if command == "callers":
-        return [Hit(e.kind, e.name, e.file, e.line, e.tags, e.args, e.doc, e.value, line)
-                for e, line in q_callers(entries, term)]
-    fn = {"ticket": q_ticket, "kw": q_kw, "tag": q_tag, "find": q_find}[command]
-    return [Hit(e.kind, e.name, e.file, e.line, e.tags, e.args, e.doc, e.value)
-            for e in fn(entries, term)]
+    return to_hits(lookup(load_index(root, cache_dir or default_cache()), command, term))
 
 
 def run(argv: list[str], root: Path | None = None, cache_dir: Path | None = None) -> str:

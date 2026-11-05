@@ -45,9 +45,12 @@ prints the hits as a JSON array (each with `kind`, `name`, `file`, `line`; a
 
 The index lives in `~/.cache/robotframework-mind/`, one file per repo, never
 in the repo. Each call compares file times and sizes and parses only changed
-files. In a git repo it reads the files git tracks or would track, so
-git-ignored probes and results stay out. Files over the size cap are skipped:
-5 MB for `docs/` JSON, 50 MB for `.robot` and `.resource`.
+files. It reads each `.gitignore` on the way down (and `.git/info/exclude`)
+itself, without calling git, so ignored probes and results stay out; a nested
+repo follows only its own rules. Hidden folders, `node_modules`, `results` and
+virtualenvs are skipped too. A file git tracks but a rule ignores is left out
+as well. Files over the size cap are skipped: 5 MB for `docs/` JSON, 50 MB for
+`.robot` and `.resource`.
 
 ## Tests
 
