@@ -12,7 +12,7 @@ from .lucide import ICONS
 ICON_SIZE = QSize(16, 16)       # square icons only; the icon-text gap is the stylesheet's padding
 # What the app calls an icon -> the Lucide name. Rename here, never at call sites.
 ICON_NAMES = {"edit": "mouse-pointer-click", "inspect": "scan-search", "run": "play", "clear": "trash-2",
-              "undo": "undo-2", "target": "monitor", "secret": "lock", "record": "circle-dot"}
+              "undo": "undo-2", "target": "bot", "secret": "lock", "record": "circle-dot"}
 BRAND = "#4361ee"               # the app icon's background; keep it equal to the light theme's accent
 
 
@@ -73,22 +73,24 @@ def _icon_dir():
     return _ICON_DIR
 
 
-def chevrons(color):
-    """Paths of chevron PNGs (plus @2x) in a temp folder: stylesheets take image files, not icons."""
+def stylesheet_icon(name, color):
+    """Path of one icon as a PNG (plus @2x) in a temp folder: stylesheets take image files, not icons."""
     folder = _icon_dir()
     os.makedirs(folder, exist_ok=True)
-    paths = {}
-    for name in ("chevron-right", "chevron-down"):
-        base = os.path.join(folder, "%s-%s" % (name, QColor(color).name()[1:]))
-        for suffix, side in (("", 16), ("@2x", 32)):
-            image = QImage(side, side, QImage.Format.Format_ARGB32)
-            image.fill(Qt.GlobalColor.transparent)
-            painter = QPainter(image)
-            QSvgRenderer(QByteArray(svg_bytes(name, color, pixels=side))).render(painter, QRectF(0, 0, side, side))
-            painter.end()
-            image.save(base + suffix + ".png")
-        paths[name.replace("-", "_")] = (base + ".png").replace("\\", "/")     # QSS wants forward slashes
-    return paths
+    base = os.path.join(folder, "%s-%s" % (name, QColor(color).name()[1:]))
+    for suffix, side in (("", 16), ("@2x", 32)):
+        image = QImage(side, side, QImage.Format.Format_ARGB32)
+        image.fill(Qt.GlobalColor.transparent)
+        painter = QPainter(image)
+        QSvgRenderer(QByteArray(svg_bytes(name, color, pixels=side))).render(painter, QRectF(0, 0, side, side))
+        painter.end()
+        image.save(base + suffix + ".png")
+    return (base + ".png").replace("\\", "/")     # QSS wants forward slashes
+
+
+def chevrons(color):
+    """Chevron image paths for the stylesheet, keyed chevron_right and chevron_down."""
+    return {name.replace("-", "_"): stylesheet_icon(name, color) for name in ("chevron-right", "chevron-down")}
 
 
 DOT_MARGIN = 1                  # px of clear space around a dot, so its antialiased edge is never cut

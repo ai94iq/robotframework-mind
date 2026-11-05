@@ -3,7 +3,7 @@ from PySide6.QtCore import QEvent, QObject, Qt
 from PySide6.QtGui import QColor, QPalette
 from PySide6.QtWidgets import QMenu, QProxyStyle, QStyle, QWidget
 
-from .icons import chevrons
+from .icons import chevrons, stylesheet_icon
 
 # One set of names for both themes, so every widget, stylesheet rule and custom painter reads the same palette.
 # ground: window background; panel: cards; raised: inputs and pills; ink/ink2/ink3: text, secondary, hint.
@@ -50,9 +50,13 @@ QToolBar#shell QToolButton:focus, QFrame#bar QToolButton:focus {{ border-color: 
 QFrame#bar QToolButton {{ padding: 4px 6px; font-size: 12px; }}
 QToolBar#shell QToolButton::menu-indicator {{ image: none; width: 0px; }}
 QFrame#seg {{ background: {raised}; border: 1px solid {line}; border-radius: 11px; }}
-QToolBar#shell QFrame#seg QToolButton {{ border-radius: 8px; padding: 5px 14px; }}
-QToolBar#shell QFrame#seg QToolButton:hover {{ background: {hover}; }}
-QToolBar#shell QFrame#seg QToolButton:checked {{ background: {accent}; color: {accent_ink}; }}
+QFrame#seg QToolButton {{ background: transparent; border: 1px solid transparent; border-radius: 8px;
+    padding: 4px 14px; color: {ink}; }}
+QFrame#seg QToolButton:hover {{ background: {hover}; }}
+QFrame#seg QToolButton:checked {{ background: {accent}; color: {accent_ink}; }}
+QFrame#seg QToolButton:focus {{ border-color: {accent}; }}
+QGraphicsView#graph {{ background: transparent; border: 0; }}
+QScrollArea#community_scroll, QWidget#community_rows {{ background: transparent; border: 0; }}
 QFrame#pill {{ background: {raised}; border: 1px solid {line}; border-radius: 14px; }}
 QFrame#pill QLabel {{ background: transparent; }}
 QFrame#pill[menu="true"]:hover {{ background: {hover}; }}
@@ -102,6 +106,19 @@ QMenu::item:selected {{ background: {accent_soft}; color: {ink}; }}
 QMenu::item:disabled {{ color: {ink2}; }}
 QMenu::separator {{ height: 1px; background: {line}; margin: 4px 8px; }}
 QMenu::indicator {{ width: 0; }}
+QMenu::indicator:checked {{ width: 14px; height: 14px; padding-left: 6px; image: url({check_accent}); }}
+QCheckBox {{ spacing: 8px; }}
+QCheckBox::indicator, QTreeView::indicator {{ width: 14px; height: 14px; border: 1px solid {line};
+    border-radius: 4px; background: {raised}; }}
+QCheckBox::indicator:hover, QTreeView::indicator:hover {{ border-color: {accent}; }}
+QCheckBox::indicator:checked, QTreeView::indicator:checked {{ background: {accent}; border-color: {accent};
+    image: url({check_on_accent}); }}
+QTreeView::indicator:indeterminate {{ background: {accent_soft}; border-color: {accent}; }}
+QLabel#banner {{ background: {bad_soft}; color: {ink}; border: 1px solid {bad}; border-radius: 8px;
+    padding: 8px 12px; }}
+QToolButton#folders_toggle {{ background: transparent; border: 0; color: {ink2}; font-size: 11px;
+    font-weight: 600; padding: 2px 0; text-align: left; }}
+QToolButton#folders_toggle:hover {{ color: {ink}; }}
 QToolTip {{ background: {raised}; color: {ink}; border: 1px solid {line}; border-radius: 6px; padding: 4px 8px; }}
 QFrame#sidebar {{ background: {panel}; border: 0; border-right: 1px solid {line}; }}
 QLabel#label {{ color: {ink2}; font-size: 11px; font-weight: 600; }}
@@ -110,7 +127,7 @@ QListWidget#nav::item {{ padding: 6px 8px; border-radius: 7px; color: {ink}; }}
 QListWidget#nav::item:hover {{ background: {hover}; }}
 QListWidget#nav::item:selected {{ background: {accent_soft}; color: {ink}; }}
 QPushButton#command {{ background: {raised}; border: 1px solid {line}; border-radius: 8px;
-    padding: 6px 12px; color: {ink}; text-align: center; }}
+    padding: 6px 28px; color: {ink}; text-align: center; }}
 QPushButton#command:hover {{ background: {hover}; }}
 QPushButton#command:focus {{ border-color: {accent}; }}
 QPushButton#command::menu-indicator {{ image: url({chevron_down}); width: 12px; height: 12px;
@@ -170,7 +187,9 @@ def apply_theme(app, mode="system"):
                       (QPalette.ColorRole.ToolTipBase, "raised"), (QPalette.ColorRole.ToolTipText, "ink")):
         p.setColor(role, QColor(t[key]))
     app.setPalette(p)
-    app.setStyleSheet(QSS.format(**t, **chevrons(t["ink2"])))
+    images = chevrons(t["ink2"]) | {"check_on_accent": stylesheet_icon("check", t["accent_ink"]),
+                                    "check_accent": stylesheet_icon("check", t["accent"])}
+    app.setStyleSheet(QSS.format(**t, **images))
     return t
 
 

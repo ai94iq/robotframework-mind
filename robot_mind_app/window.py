@@ -1,27 +1,47 @@
-"""Main window: a sidebar (repo + saved + recent), a query bar, and a styled results table."""
+"""Main window: a sidebar (repo + saved + folders + recent), a query bar, and a styled results table."""
+import shutil
 import subprocess
+from dataclasses import dataclass
 from pathlib import Path
 
-from PySide6.QtCore import QSettings, QSize, Qt
-from PySide6.QtGui import QAction, QColor
+from PySide6.QtCore import QSettings, QSize, Qt, QUrl
+from PySide6.QtGui import QAction, QActionGroup, QColor, QDesktopServices
 from PySide6.QtWidgets import (QAbstractItemView, QApplication, QFileDialog, QFrame,
-                               QHBoxLayout, QHeaderView, QInputDialog, QLineEdit, QListWidget, QListWidgetItem,
+                               QHBoxLayout, QHeaderView, QLineEdit, QListWidget, QListWidgetItem,
                                QMainWindow, QMenu, QPushButton, QSizePolicy, QSpinBox, QStackedWidget,
                                QTableWidget, QTableWidgetItem, QToolButton, QVBoxLayout, QWidget)
 
 from robot_mind import strip_controls
 
-from . import engine
+from . import editors, engine
+from .folders import FolderTree
+from .graph_layout import Drawing, plan
+from .graph_view import GraphView
 from .icons import ICON_SIZE, app_icon, icon
-from .settings import AppSettings, open_in_editor
+from .settings import AppSettings, check_program, editor_url, open_in_editor
 from .theme import THEME_ICONS, THEME_MODES, apply_theme
-from .widgets import EmptyState, card, plain_label, shade
+from .widgets import EmptyState, card, plain_label, segmented, shade
 from .worker import Worker
 
 APP_NAME = "Robot Framework Mind"
 ORG = "robotframework-mind"
-COMMANDS = ("ticket", "kw", "callers", "tag", "find")
+# command key: (button label, what it finds, search box hint)
+COMMAND_INFO = {
+    "ticket": ("Ticket", "Tests and keywords whose tags, name or docs mention it", "ticket key or word, e.g. PROJ-2120"),
+    "kw": ("Keyword", "Where a keyword is defined", "keyword name, e.g. Open Cases Page"),
+    "callers": ("Who calls it", "Every place a keyword is called, with the line", "keyword name"),
+    "tag": ("Tag", "Tests and keywords with this exact tag; end with * for a prefix", "tag, e.g. smoke or role:*"),
+    "find": ("Anything", "Any name, tag, doc, argument or value that contains it", "any text, e.g. /api/items"),
+}
+COMMANDS = tuple(COMMAND_INFO)
 KIND_TOKENS = {"test": "accent_text", "keyword": "ok", "var": "warn", "json": "ink2"}
+
+
+@dataclass(frozen=True)
+class FoundRepos:
+    """The worker's answer to "which repos does this folder hold?"."""
+    root: str
+    repos: list[str]
 
 
 def hit_detail(hit) -> str:
@@ -37,6 +57,7 @@ def hit_detail(hit) -> str:
 
 class MainWindow(QMainWindow):
     DISPLAY_LIMIT = 500
+    GRAPH_LIMIT = 80             # nodes drawn at most; more than that stops reading as a picture
 
     def __init__(self, worker=None, settings=None, targets=(), task=None, cache_dir=None):
         super().__init__()
@@ -48,10 +69,13 @@ class MainWindow(QMainWindow):
         self.t = apply_theme(QApplication.instance(), self.theme_mode)
         self.cache_dir = cache_dir
         self.repo = None
+        self.repo_list = []              # repos inside the chosen folder, when it holds several
+        self.mode = "table"
         self._status_base = ""
         self.setWindowTitle(APP_NAME)
         self.setWindowIcon(app_icon())
         self._build()
+        self.set_command(COMMANDS[0])
         self.refresh_repos()
         self.refresh_history()
         self.worker.finished.connect(self._finished)
@@ -74,7 +98,7 @@ class MainWindow(QMainWindow):
     def _sidebar(self):
         sidebar = QFrame()
         sidebar.setObjectName("sidebar")
-        sidebar.setFixedWidth(252)
+        sidebar.setFixedWidth(280)
         col = QVBoxLayout(sidebar)
         col.setContentsMargins(16, 18, 16, 14)
         col.setSpacing(10)
@@ -105,6 +129,18 @@ class MainWindow(QMainWindow):
         self.repos_list.itemClicked.connect(lambda item: self.set_repo(item.data(Qt.ItemDataRole.UserRole)))
         col.addWidget(self.repos_list, 2)
 
+        self.folders_toggle = QToolButton()          # shown only when the folder holds two repos or more
+        self.folders_toggle.setObjectName("folders_toggle")
+        self.folders_toggle.setCheckable(True)
+        self.folders_toggle.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonTextBesideIcon)
+        self.folders_toggle.setToolTip("Untick a repo to leave it out of the search")
+        self.folders_toggle.toggled.connect(self._folders_look)
+        self.folders_toggle.setHidden(True)
+        self.folders = FolderTree()
+        self.folders.itemChanged.connect(lambda *_: self._folders_look())
+        col.addWidget(self.folders_toggle)
+        col.addWidget(self.folders, 3)
+
         col.addWidget(plain_label("Recent", "label"))
         self.history_hint = plain_label("No recent queries", "hint")
         col.addWidget(self.history_hint)
@@ -126,8 +162,8 @@ class MainWindow(QMainWindow):
         self.theme_button.setIconSize(ICON_SIZE)
         self.theme_button.setAccessibleName("Theme")
         self.editor_button = QPushButton("Editor")
-        self.editor_button.setToolTip("Set the command used by Open")
-        self.editor_button.clicked.connect(self.edit_editor_command)
+        self.editor_button.setToolTip("Which program Open uses to show a result")
+        self._editor_menu()
         bottom.addWidget(self.theme_button)
         bottom.addWidget(self.editor_button)
         bottom.addStretch(1)
@@ -151,6 +187,8 @@ class MainWindow(QMainWindow):
         top_col.addWidget(self.page_title)
         top_col.addWidget(self.page_sub)
         top_col.addWidget(self._query_bar())
+        self.command_hint = plain_label("", "hint")
+        top_col.addWidget(self.command_hint)
         outer.addWidget(top)
 
         self.empty_state = EmptyState(self.t, "scan-search", "Ready when you are",
@@ -172,9 +210,12 @@ class MainWindow(QMainWindow):
         header.setFixedHeight(34)
         self.results.setColumnWidth(1, 250)
         self.results.setColumnWidth(2, 300)
+        self.graph_view = GraphView(self.t)
+        self.graph_view.activated.connect(lambda _node: self.open_selected())
         self.stack = QStackedWidget()
         self.stack.addWidget(self.empty_state)
         self.stack.addWidget(self.results)
+        self.stack.addWidget(self.graph_view)
         self.results_holder = card(self._results_pane(), self.t)
         self.cards = [self.results_holder]
         outer.addWidget(self.results_holder, 1)
@@ -193,16 +234,17 @@ class MainWindow(QMainWindow):
         row = QHBoxLayout(box)
         row.setContentsMargins(10, 8, 10, 8)
         row.setSpacing(8)
-        self.command = QPushButton(COMMANDS[0])
+        self.command = QPushButton()
         self.command.setObjectName("command")
-        self.command.setFixedWidth(108)
+        self.command.setFixedWidth(140)
+        self.command.setToolTip("What to search for")
         self.command_menu = QMenu(self.command)
-        for name in COMMANDS:
-            action = self.command_menu.addAction(name)
-            action.triggered.connect(lambda _=False, n=name: self.set_command(n))
+        for key, (label, what, _hint) in COMMAND_INFO.items():
+            action = self.command_menu.addAction(f"{label}\t{what}")      # the tab puts the description right
+            action.setData(key)
+            action.triggered.connect(lambda _=False, k=key: self.set_command(k))
         self.command.setMenu(self.command_menu)
         self.term = QLineEdit()
-        self.term.setPlaceholderText("ticket key, keyword, tag, or text")
         self.term.returnPressed.connect(self.search)
         self.limit = QSpinBox()
         self.limit.setRange(1, self.DISPLAY_LIMIT)
@@ -215,7 +257,8 @@ class MainWindow(QMainWindow):
         self.search_button.clicked.connect(self.search)
         row.addWidget(self.command)
         row.addWidget(self.term, 1)
-        row.addWidget(plain_label("rows", "hint"))
+        self.rows_label = plain_label("rows", "hint")
+        row.addWidget(self.rows_label)
         row.addWidget(self.limit)
         row.addWidget(self.search_button)
         return box
@@ -227,7 +270,7 @@ class MainWindow(QMainWindow):
         column.setSpacing(8)
         head = QHBoxLayout()
         head.setSpacing(8)
-        self.count_chip = plain_label("0 hits", "chip")
+        self.count_chip = plain_label("0 hits", "hint")     # a caption under the header, not a pill inside it
         self.filter = QLineEdit()
         self.filter.setPlaceholderText("filter by tag, name or text")
         self.filter.textChanged.connect(self._apply_filter)
@@ -237,13 +280,29 @@ class MainWindow(QMainWindow):
         self.open_button = QPushButton("Open")
         self.open_button.setToolTip("Open the selected hit at its line in the editor")
         self.open_button.clicked.connect(self.open_selected)
-        head.addWidget(self.count_chip)
+        self.modes = QActionGroup(self)
+        for name in ("Table", "Graph"):
+            action = self.modes.addAction(name)
+            action.setCheckable(True)
+            action.setChecked(name == "Table")
+            action.triggered.connect(lambda _=False, n=name.lower(): self.set_mode(n))
+        head.addWidget(segmented(self.modes.actions()))
         head.addWidget(self.filter, 1)
+        head.addStretch(0)                  # takes the filter's room when Graph mode hides it
         head.addWidget(self.copy_button)
         head.addWidget(self.open_button)
         column.addLayout(head)
+        column.addWidget(self.count_chip)
+        self.banner = plain_label("", "banner")       # a failure shows here, where the eyes are
+        self.banner.setWordWrap(True)
+        self.banner.setHidden(True)
+        column.addWidget(self.banner)
         column.addWidget(self.stack, 1)
         return pane
+
+    def show_error(self, text):
+        self.banner.setText(strip_controls(text[:300]))
+        self.banner.setHidden(False)
 
     # ---------------------------------------------------------------- repo and theme
     def choose_repo(self):
@@ -267,6 +326,34 @@ class MainWindow(QMainWindow):
         self.empty_state.show_text("Ready when you are",
                                    f"Search {name} for a ticket, keyword, tag or endpoint.")
         self.stack.setCurrentWidget(self.empty_state)
+        self.banner.setHidden(True)
+        self.repo_list = []
+        self.folders.set_repos([])
+        self.folders_toggle.setChecked(False)
+        self.folders_toggle.setHidden(True)
+        self._folders_look()
+        root = self.repo                  # which repos it holds is a folder walk: worker thread
+        self.worker.submit(lambda: FoundRepos(root, engine.repos(root)), self.worker.reserve())
+
+    def show_folders(self, found):
+        if found.root != self.repo:       # an answer for a folder the user has already left
+            return
+        self.repo_list = found.repos
+        self.folders.set_repos(found.repos)
+        self.folders_toggle.setHidden(len(found.repos) < 2)
+        self._folders_look()
+
+    def _folders_look(self):
+        """Collapsed by default: a count and an arrow; open, the tree of repos to untick."""
+        shown = self.folders_toggle.isChecked() and not self.folders_toggle.isHidden()
+        self.folders.setHidden(not shown)
+        self.folders_toggle.setArrowType(Qt.ArrowType.DownArrow if shown else Qt.ArrowType.RightArrow)
+        picked = self.folders.scope()
+        count = len(self.repo_list) if picked is None else f"{len(picked)} of {len(self.repo_list)}"
+        self.folders_toggle.setText(f"Folders  ({count} repos)")
+
+    def scope(self):
+        return self.folders.scope()
 
     def refresh_repos(self):
         self.repos_list.clear()
@@ -279,11 +366,39 @@ class MainWindow(QMainWindow):
         self.repos_list.setVisible(bool(repos))
         self.repos_hint.setVisible(not repos)
 
-    def edit_editor_command(self):
+    def _editor_menu(self):
+        """Editors found on this machine, the system default, and any other program picked from disk."""
+        self.editor_menu = QMenu(self.editor_button)
+        self.editor_menu.setToolTipsVisible(True)
+        self.editor_menu.aboutToShow.connect(self._fill_editor_menu)
+        self.editor_button.setMenu(self.editor_menu)
+        self._fill_editor_menu()
+        self._editor_look()
+
+    def _fill_editor_menu(self):
+        self.editor_menu.clear()
         current = self.saved.editor_command()
-        text, ok = QInputDialog.getText(self, "Editor command", "Use {file} and {line}:", text=current)
-        if ok and text.strip():
-            self.saved.set_editor_command(text.strip())
+        for editor in editors.available():
+            action = self.editor_menu.addAction(editor.label)
+            action.setCheckable(True)
+            action.setChecked(editor.command == current)
+            action.triggered.connect(lambda _=False, c=editor.command: self.set_editor(c))
+        self.editor_menu.addSeparator()
+        other = self.editor_menu.addAction("Other program...")
+        other.setToolTip("Pick an .exe; it gets the file (no jump to the line)")
+        other.triggered.connect(self.pick_editor_program)
+
+    def pick_editor_program(self):
+        path, _ = QFileDialog.getOpenFileName(self, "Program to open files with", "", "Programs (*.exe);;All files (*)")
+        if path:
+            self.set_editor(editors.program_command(path))
+
+    def set_editor(self, command):
+        self.saved.set_editor_command(command)
+        self._editor_look()
+
+    def _editor_look(self):
+        self.editor_button.setText(f"Editor: {editors.label_for(self.saved.editor_command())}")
 
     def set_theme(self, mode, save=True):
         self.theme_mode = mode if mode in THEME_MODES else "system"
@@ -291,6 +406,7 @@ class MainWindow(QMainWindow):
             self.settings.setValue("theme", self.theme_mode)
         self.t = apply_theme(QApplication.instance(), self.theme_mode)
         self.empty_state.retheme(self.t)
+        self.graph_view.retheme(self.t)
         for holder in self.cards:
             shade(holder.frame, self.t)
         self._theme_look()
@@ -311,25 +427,63 @@ class MainWindow(QMainWindow):
     # ---------------------------------------------------------------- work
     def search(self):
         if not self.repo:
-            self.status.setText("Choose a repo first.")
+            self._status_base = "Please pick a repo first"
+            self.status.setText(self._status_base)
+            self.empty_state.show_text("Please pick a repo first",
+                                       "Click Choose repo on the left (or a saved repo), then search again.")
+            self.stack.setCurrentWidget(self.empty_state)
             return None
-        command, term = self.command.text(), self.term.text()
+        command, term = self.command_key, self.term.text()
         self.saved.add_history(command, term)
         self.refresh_history()
         job = self.worker.reserve()
-        self._status_base = f"Searching {command} {term}..."
+        self._status_base = f"Searching {COMMAND_INFO[command][0].lower()} {term}..."
         self.status.setText(self._status_base)
+        self.banner.setHidden(True)
         self.empty_state.show_text("Searching...", "Reading the index; results show when it finishes.")
         self.stack.setCurrentWidget(self.empty_state)
-        return self.worker.submit(
-            lambda: engine.query(self.repo, command, term, cache_dir=self.cache_dir), job)
+        repo, cache, scope, limit = self.repo, self.cache_dir, self.scope(), self.GRAPH_LIMIT
+        repos = list(self.repo_list)
+        if self.mode == "graph":         # the layout is computed on the worker too, never on the UI thread
+            return self.worker.submit(
+                lambda: plan(engine.graph(repo, command, term, cache_dir=cache, scope=scope), limit, repos), job)
+        return self.worker.submit(lambda: engine.query(repo, command, term, cache_dir=cache, scope=scope), job)
 
-    def _finished(self, job, hits):
-        self.set_results(hits)
+    def _finished(self, job, result):
+        if isinstance(result, FoundRepos):
+            self.show_folders(result)
+        elif isinstance(result, Drawing):
+            self.set_graph(result)
+        else:
+            self.set_results(result)
+
+    def set_mode(self, mode):
+        """table or graph; a search already typed runs again in the new mode."""
+        self.mode = mode
+        next(a for a in self.modes.actions() if a.text().lower() == mode).setChecked(True)
+        for widget in (self.filter, self.rows_label, self.limit):      # table-only controls
+            widget.setHidden(mode == "graph")
+        if self.repo and self.term.text().strip():
+            self.search()
+
+    def set_graph(self, drawing):
+        shown = drawing.graph
+        if not shown.nodes:
+            self.set_results([])
+            return
+        self.graph_view.show_graph(drawing)
+        self.stack.setCurrentWidget(self.graph_view)
+        self.count_chip.setText(f"{len(shown.nodes)} of {drawing.total} nodes")
+        capped = " - the nearest to your search; narrow it to see the rest" if len(shown.nodes) < drawing.total else ""
+        self._status_base = f"{len(shown.nodes)} nodes, {len(shown.edges)} links{capped}"
+        self.status.setText(self._status_base)
 
     def _failed(self, job, text):
         self._status_base = strip_controls(text[:200])
         self.status.setText(self._status_base)
+        self.show_error(f"Something went wrong: {text}")
+        if self.stack.currentWidget() is self.empty_state:
+            self.empty_state.show_text("No results", "The search stopped; see the message above.")
 
     def _timed(self, job, seconds):
         if self._status_base:
@@ -339,7 +493,7 @@ class MainWindow(QMainWindow):
         self.history_list.clear()
         history = self.saved.history()
         for command, term in history:
-            item = QListWidgetItem(f"{command}: {term}")
+            item = QListWidgetItem(f"{COMMAND_INFO.get(command, (command,))[0]}: {term}")
             item.setData(Qt.ItemDataRole.UserRole, (command, term))
             self.history_list.addItem(item)
         self.history_list.setVisible(bool(history))
@@ -350,9 +504,14 @@ class MainWindow(QMainWindow):
         self.term.setText(term)
         self.search()
 
-    def set_command(self, name):
-        if name in COMMANDS:
-            self.command.setText(name)
+    def set_command(self, key):
+        if key not in COMMAND_INFO:
+            return
+        label, what, hint = COMMAND_INFO[key]
+        self.command_key = key
+        self.command.setText(label)
+        self.term.setPlaceholderText(hint)
+        self.command_hint.setText(f"{label}: {what}")
 
     def _kind_color(self, kind):
         return self.t.get(KIND_TOKENS.get(kind, "ink2"), self.t["ink2"])
@@ -408,25 +567,55 @@ class MainWindow(QMainWindow):
         item = self.results.item(row, 0)
         return item.data(Qt.ItemDataRole.UserRole) if item else None
 
-    def copy_selected(self):
+    def _selected(self):
+        """(kind, name, file, line) of the selected table row or graph node, or None."""
+        if self.stack.currentWidget() is self.graph_view:
+            node = self.graph_view.selected_node()
+            return (node.kind, node.label, node.file, node.line) if node else None
         hit = self._selected_hit()
-        if hit is None:
+        return (hit.kind, hit.name, hit.file, hit.call_line or hit.line) if hit else None
+
+    def copy_selected(self):
+        chosen = self._selected()
+        if chosen is None:
             return
-        QApplication.clipboard().setText(f"{hit.kind}  {hit.name}  {self._location(hit)}")
+        kind, name, file, line = chosen
+        QApplication.clipboard().setText("  ".join(part for part in (kind, name, where(file, line)) if part))
         self.status.setText("Copied to clipboard")
 
     def open_selected(self):
-        hit = self._selected_hit()
-        if hit is None or not self.repo:
+        chosen = self._selected()
+        if chosen is None or not self.repo:
+            self.status.setText("Select a result first, then Open")
             return
-        argv = open_in_editor(hit.file, hit.call_line or hit.line, self.saved.editor_command())
+        _kind, _name, file, line = chosen
+        if not file:
+            self.status.setText("An endpoint has no file to open")
+            return
         try:
-            subprocess.Popen(argv, cwd=self.repo)
-            self.status.setText(f"Opened {self._location(hit)}")
-        except OSError as err:
-            self.status.setText(f"Could not open editor: {err}")
+            self._launch(file, line)
+            self.status.setText(f"Opened {where(file, line)}")
+        except (OSError, ValueError) as err:
+            self.show_error(f"Could not open the editor: {err}. Pick another with the Editor button, bottom left.")
+
+    def _launch(self, file, line):
+        command = self.saved.editor_command()
+        if command in editors.URL_EDITORS:
+            if not QDesktopServices.openUrl(QUrl(editor_url(self.repo, file, line, command))):
+                raise OSError(f"{editors.label_for(command)} is not installed")
+            return
+        if command == editors.DEFAULT_APP:
+            if not QDesktopServices.openUrl(QUrl.fromLocalFile(str(Path(self.repo) / file))):
+                raise OSError("no app is set for this kind of file")
+            return
+        argv = open_in_editor(file, line, command)
+        argv[0] = check_program(shutil.which(argv[0]) or argv[0])
+        subprocess.Popen(argv, cwd=self.repo)
 
     @staticmethod
     def _location(hit):
-        line = hit.call_line or hit.line
-        return f"{hit.file}:{line}" if line else hit.file
+        return where(hit.file, hit.call_line or hit.line)
+
+
+def where(file, line):
+    return f"{file}:{line}" if line else file

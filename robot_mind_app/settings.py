@@ -1,9 +1,13 @@
 """Persistent app state in QSettings: saved repos, query history, and the editor command."""
 import shlex
+from pathlib import PurePath
+from urllib.parse import quote
 
 from PySide6.QtCore import QSettings
 
-DEFAULT_EDITOR = "code --goto {file}:{line}"
+VSCODE = "vscode"                      # open through VS Code's vscode:// link: no console, no shell
+DEFAULT_EDITOR = VSCODE
+SCRIPT_SUFFIXES = {".cmd", ".bat"}     # Windows runs these through cmd.exe, which re-reads the file name
 MAX_REPOS = 20
 MAX_HISTORY = 30
 
@@ -58,6 +62,20 @@ def _unquote(token: str) -> str:
 def _file_arg(file: str) -> str:
     """Prefix a name starting with '-' so it is not read as an option (S2)."""
     return "./" + file if file.startswith("-") else file
+
+
+def editor_url(root: str, file: str, line: int, scheme: str = VSCODE) -> str:
+    """The scheme://file link (vscode, cursor) that opens root/file at line."""
+    path = PurePath(root, file).as_posix()
+    return f"{scheme}://file/{quote(path, safe='/:')}:{line}"
+
+
+def check_program(path: str) -> str:
+    """The program itself, or ValueError for a .cmd or .bat launcher (it would open a console and pass the
+    file name through cmd.exe)."""
+    if PurePath(path).suffix.lower() in SCRIPT_SUFFIXES:
+        raise ValueError(f"{PurePath(path).name} is a script; point the editor at its .exe instead")
+    return path
 
 
 def open_in_editor(file: str, line: int, command: str = DEFAULT_EDITOR) -> list[str]:
