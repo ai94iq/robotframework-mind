@@ -5,393 +5,329 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>robotframework-mind: exact lookups over Robot Framework repos</title>
 <meta name="description" content="Ask which tests cover a ticket, who calls a keyword or where an endpoint is used, and get one file:line per hit. A CLI for agents and a desktop app for people.">
+<meta property="og:title" content="robotframework-mind: exact lookups over Robot Framework repos">
+<meta property="og:description" content="Ask which tests cover a ticket, who calls a keyword or where an endpoint is used, and get one file:line per hit.">
+<meta property="og:type" content="website">
 <meta name="color-scheme" content="light dark">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Crect width='24' height='24' rx='5' fill='%23ffe24a'/%3E%3Cg fill='none' stroke='%2316181d' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Crect x='4' y='8' width='16' height='11' rx='3'/%3E%3Cpath d='M12 8V5'/%3E%3Ccircle cx='12' cy='4' r='1'/%3E%3Cpath d='M9 13v1.5M15 13v1.5'/%3E%3Cpath d='M2 13v3M22 13v3'/%3E%3C/g%3E%3C/svg%3E">
+<link rel="preload" href="fonts/bricolage-grotesque.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="preload" href="fonts/fragment-mono.woff2" as="font" type="font/woff2" crossorigin>
+<script>document.documentElement.classList.add('js')</script>
 <style>
+@font-face { font-family: "Bricolage Grotesque"; src: url(fonts/bricolage-grotesque.woff2) format("woff2"); font-weight: 200 800; font-display: swap; }
+@font-face { font-family: "Fragment Mono"; src: url(fonts/fragment-mono.woff2) format("woff2"); font-weight: 400; font-display: swap; }
+
 :root {
   color-scheme: light dark;
-  --ground: #f4f5f6; --panel: #ffffff; --well: #eceef0; --ink: #14171a; --ink2: #3a4046; --ink3: #656c75;
-  --line: #14171a; --red: #c42d17; --code-bg: #14171a; --code-ink: #f4f5f6;
-  --sans: Bahnschrift, "DIN Alternate", "Roboto Condensed", "Segoe UI Variable Text", "Segoe UI", system-ui, -apple-system, sans-serif;
-  --mono: "Cascadia Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  --page: #ffffff; --ink: #16181d; --mute: #62676f; --line: #e4e5e8; --quiet: #d4d6da; --panel: #d8dae0;
+  --mark: #ffe24a; --on-mark: #16181d;
+  --sans: "Bricolage Grotesque", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --mono: "Fragment Mono", ui-monospace, Menlo, Consolas, monospace;
+  --swipe: cubic-bezier(.3, .7, .2, 1);
 }
 @media (prefers-color-scheme: dark) {
-  :root {
-    --ground: #0e1013; --panel: #15181d; --well: #1c2026; --ink: #eceef1; --ink2: #b9bfc8; --ink3: #8c94a0;
-    --line: #dfe3e8; --red: #ff6a4d; --code-bg: #07080a; --code-ink: #eceef1;
-  }
+  :root { --page: #15171c; --ink: #eceef0; --mute: #a2a7af; --line: #2c2f36; --quiet: #41454e; --panel: #1e2126; }
 }
 *, *::before, *::after { box-sizing: border-box; }
-html { scroll-behavior: smooth; }
-body { margin: 0; background: var(--ground); color: var(--ink); font: 16px/1.55 var(--sans); -webkit-font-smoothing: antialiased; }
-::selection { background: var(--red); color: var(--ground); }
-a { color: inherit; text-decoration-thickness: 1px; text-underline-offset: 3px; }
-a:hover { color: var(--red); }
-:focus-visible { outline: 2px solid var(--red); outline-offset: 3px; }
-code, pre, .mono { font-family: var(--mono); }
-h1, h2, h3, p { margin: 0; }
-.caps { text-transform: uppercase; letter-spacing: .14em; font-size: .72rem; color: var(--ink3); }
-.red { color: var(--red); }
+html { scroll-behavior: smooth; -webkit-text-size-adjust: 100%; }
+body { margin: 0; background: var(--page); color: var(--ink); font: 400 18px/1.55 var(--sans); }
+::selection { background: var(--mark); color: var(--on-mark); }
+a { color: inherit; text-underline-offset: 3px; text-decoration-thickness: 1px; }
+:focus-visible { outline: 2px solid var(--ink); outline-offset: 2px; }
+h1, h2, h3, p, figure, pre, ul { margin: 0; }
+code, pre { font-family: var(--mono); }
+.wrap { width: min(1160px, 100% - 48px); margin: 0 auto; }
+.sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
 
-/* a drawing sheet: double border, zone letters and numbers in the margin */
-.sheet { position: relative; width: min(1240px, 100% - 32px); margin: 24px auto; padding: 40px 28px 28px 44px; border: 2px solid var(--line); background: var(--ground); }
-.sheet::before { content: ""; position: absolute; inset: 6px; border: 1px solid var(--line); pointer-events: none; }
-.zones, .rows { position: absolute; display: flex; color: var(--ink3); font: .75rem var(--mono); pointer-events: none; }
-.zones { left: 44px; right: 28px; justify-content: space-around; }
-.zones.top { top: 14px; } .zones.bot { bottom: 12px; }
-.rows { left: 14px; top: 40px; bottom: 28px; flex-direction: column; justify-content: space-around; }
-.sheet > :not(.zones):not(.rows) { position: relative; }
+/* highlighter stroke */
+.hl, .on .t {
+  padding: .02em .24em; margin: 0 -.24em; border-radius: .1em .24em .16em .12em;
+  background: linear-gradient(var(--mark), var(--mark)) no-repeat 0 62% / 100% var(--mh, 100%);
+  color: var(--on-mark);
+  -webkit-box-decoration-break: clone; box-decoration-break: clone;
+}
 
-/* header */
-.bar { display: flex; justify-content: space-between; align-items: center; gap: 12px 24px; flex-wrap: wrap; padding-bottom: 14px; border-bottom: 1px solid var(--line); }
-.brand { display: inline-flex; align-items: center; gap: 10px; font-weight: 700; text-decoration: none; letter-spacing: .04em; text-transform: uppercase; }
-.brand svg { width: 26px; height: 26px; color: var(--red); }
-nav { display: flex; flex-wrap: wrap; gap: 4px; }
-nav a { text-decoration: none; padding: 8px 12px; min-height: 36px; display: inline-flex; align-items: center; font-size: .88rem; letter-spacing: .08em; text-transform: uppercase; color: var(--ink2); }
-nav a:hover { color: var(--red); }
+header { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: 4px 24px; padding: 22px 0; }
+.brand { display: inline-flex; align-items: center; gap: 9px; font-weight: 700; text-decoration: none; }
+.brand svg { width: 24px; height: 24px; flex: none; }
+nav { display: flex; flex-wrap: wrap; gap: 0 22px; font-size: 16px; }
+nav a { padding: 6px 0; text-decoration: none; }
+nav a:hover { text-decoration: underline; }
 
 /* hero */
-.hero { display: grid; grid-template-columns: minmax(0, 1.15fr) minmax(0, 1fr); gap: 44px; padding: 40px 0 36px; align-items: start; }
-h1 { font-size: clamp(2.6rem, 6.4vw, 5.4rem); line-height: .95; font-weight: 700; text-transform: uppercase; letter-spacing: -.01em; text-wrap: balance; }
-.lede { margin-top: 22px; font-size: 1.15rem; color: var(--ink2); max-width: 32em; }
-.lede .mono { font-size: .95em; color: var(--ink); }
-.actions { margin-top: 28px; display: flex; flex-wrap: wrap; gap: 12px; }
-.btn { display: inline-flex; align-items: center; gap: 10px; min-height: 46px; padding: 0 18px; border: 2px solid var(--line); background: transparent; color: var(--ink); font: 600 .95rem var(--sans); text-decoration: none; cursor: pointer; transition: background .15s, color .15s, transform .15s; }
-.btn:hover { background: var(--ink); color: var(--ground); transform: translateY(-1px); }
-.btn:active { transform: none; }
-.btn.fill { background: var(--ink); color: var(--ground); font: 500 .9rem var(--mono); }
-.btn.fill:hover { background: var(--red); border-color: var(--red); color: var(--ground); }
-.btn svg { width: 18px; height: 18px; flex: none; }
-.copied { min-height: 1.4em; margin-top: 10px; font-size: .88rem; color: var(--red); }
+.hero { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.14fr); gap: 72px; padding: 56px 0 96px; align-items: start; }
+h1 { font-size: clamp(50px, 6.3vw, 84px); font-weight: 800; line-height: 1.12; letter-spacing: -.015em; }
+h1 .hl { --mh: 80%; padding: 0 .14em; margin: 0 -.14em; border-radius: .06em .12em .08em .05em; }
+.lede { margin-top: 26px; font-size: 21px; line-height: 1.45; max-width: 26em; }
+.actions { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 30px; }
+.btn { display: inline-flex; align-items: center; gap: 9px; min-height: 46px; padding: 0 16px; border: 1.5px solid var(--ink); border-radius: 8px; background: none; color: var(--ink); font: 600 16px/1.2 var(--sans); text-decoration: none; cursor: pointer; }
+.btn svg { width: 17px; height: 17px; flex: none; }
+.btn.copy { background: var(--ink); color: var(--page); font: 400 14px/1.2 var(--mono); }
+.btn:hover { background: var(--mark); border-color: var(--mark); color: var(--on-mark); }
+.copied { min-height: 28px; margin-top: 8px; font-size: 16px; color: var(--mute); }
 
-/* framed detail with numbered callouts */
-.detail { border: 1.5px solid var(--line); background: var(--panel); }
-.dhead { display: flex; justify-content: space-between; gap: 12px; padding: 9px 14px; border-bottom: 1.5px solid var(--line); }
-.detail pre { margin: 0; padding: 20px 20px 22px 24px; font-size: .82rem; line-height: 1.85; white-space: pre-wrap; overflow-wrap: break-word; }
-.detail pre .d { color: var(--ink3); }
-.detail pre b { font-weight: 700; }
-.callouts { margin: 18px 0 0; padding: 0; list-style: none; display: grid; gap: 8px; font-size: .9rem; color: var(--ink2); }
-.callouts li { display: flex; gap: 10px; align-items: center; }
-.n { flex: none; display: inline-grid; place-items: center; width: 22px; height: 22px; border: 1.5px solid var(--red); border-radius: 50%; color: var(--red); font: 600 .72rem var(--sans); background: var(--ground); }
+#flow { padding: 18px 20px; border: 1px solid var(--line); border-radius: 8px; }
+.js .tabs { display: flex; }
+.tabs button { min-height: 36px; padding: 0 9px; border: 0; border-radius: 5px; background: none; color: var(--mute); font: 400 15px/1 var(--mono); cursor: pointer; }
+.tabs button:hover { color: var(--ink); }
+.tabs button[aria-pressed="true"] { background: var(--mark); color: var(--on-mark); }
+.fname { font: 400 13.5px/22px var(--mono); }
+.fname + .file { margin-top: 8px; }
+.file + .fname { margin-top: 26px; }
+.file { margin: 0; padding: 0; list-style: none; counter-reset: ln; color: var(--ink); font: 400 13.5px/22px var(--mono); }
+.file li { position: relative; min-height: 22px; padding-left: 3em; counter-increment: ln; white-space: pre-wrap; overflow-wrap: anywhere; }
+.file li::before { content: counter(ln); position: absolute; left: 0; width: 2em; text-align: right; }
+.out { margin-top: 18px; padding-top: 14px; border-top: 1px solid var(--line); color: var(--ink); font-size: 13px; line-height: 20px; white-space: pre-wrap; overflow-wrap: anywhere; }
 
-/* the call graph, drawn as a detail view */
-.graph { margin-top: 4px; }
-.gwrap { overflow-x: auto; }
-.gsvg { display: block; width: 100%; height: auto; }
-.gsvg-d { min-width: 760px; }
-.gsvg-m { display: none; }
-.gsvg text { font: 13px var(--mono); fill: var(--ink); }
-.gsvg .c { font: 700 15px var(--sans); letter-spacing: .02em; }
-.gsvg .sub { fill: var(--ink3); font-size: 11px; }
-.gsvg .edge { fill: none; stroke-width: 1.5; }
-.gsvg .e-api { stroke: var(--ink); opacity: .6; }
-.gsvg .e-web { stroke: var(--red); opacity: .8; }
-.gsvg .n-api { fill: var(--ink); }
-.gsvg .n-web { fill: var(--red); }
-.gsvg .core { fill: var(--ground); stroke: var(--red); stroke-width: 2.5; }
-.gsvg .ring { fill: none; stroke: var(--red); stroke-width: 1; stroke-dasharray: 3 4; }
-.gkey { display: flex; flex-wrap: wrap; gap: 6px 22px; padding: 10px 14px; border-top: 1.5px solid var(--line); font-size: .84rem; color: var(--ink2); }
-.gkey i { display: inline-block; width: 10px; height: 10px; border-radius: 50%; margin-right: 8px; }
-.js .gsvg .edge { stroke-dasharray: 1; stroke-dashoffset: 1; }
-.js .gsvg .node { opacity: 0; }
-.js .in .gsvg .edge { stroke-dashoffset: 0; transition: stroke-dashoffset 1s cubic-bezier(.16, 1, .3, 1) .15s; }
-.js .in .gsvg .node { opacity: 1; transition: opacity .5s ease .6s; }
+/* keywords / reading load */
+h2 .hl { --mh: 72%; padding: 0 .12em; margin: 0 -.12em; border-radius: .06em .12em .08em .05em; }
+h2 { font-size: clamp(32px, 4.2vw, 52px); font-weight: 800; line-height: 1.1; letter-spacing: -.02em; max-width: 18em; text-wrap: balance; }
+.sub { margin-top: 16px; max-width: 38em; color: var(--mute); }
+.legend { display: flex; flex-wrap: wrap; gap: 4px 26px; margin-top: 30px; font-size: 16px; color: var(--mute); }
+.legend i { display: inline-block; width: 22px; height: 12px; margin-right: 8px; border-radius: 2px; background: var(--quiet); }
+.legend i.hit { background: var(--mark); }
+.dims { --reach: .78; display: grid; grid-template-columns: minmax(0, 1fr); gap: 26px; max-width: 900px; margin-top: 28px; }
+.qh { display: flex; justify-content: space-between; align-items: baseline; gap: 16px; margin-bottom: 6px; }
+.qh h3 { font-size: 18px; font-weight: 600; }
+.qh span { flex: none; font-weight: 700; font-size: 16px; }
+.row { display: flex; align-items: center; gap: 10px; margin-top: 4px; }
+.bar { flex: 0 1 calc(var(--w) * var(--reach)); min-width: 0; height: 14px; border-radius: 2px; background: linear-gradient(var(--quiet), var(--quiet)) no-repeat 0 0 / 100% 100%; }
+.bar.hit { background-image: linear-gradient(var(--mark), var(--mark)); }
+.val { flex: none; font: 400 13.5px/1.3 var(--mono); color: var(--mute); }
+.note { margin-top: 26px; font-size: 16px; color: var(--mute); }
 
-/* sheets 2 and 3 */
-.sec-head { padding: 28px 0 18px; }
-h2 { font-size: clamp(1.9rem, 4.2vw, 3.2rem); line-height: 1; font-weight: 700; text-transform: uppercase; text-wrap: balance; }
-.sec-head p { margin-top: 14px; max-width: 46em; color: var(--ink2); }
-.sec-head .caps { display: block; margin-bottom: 10px; }
-
-.dims { display: grid; gap: 26px; margin-top: 8px; padding: 8px 0 28px; }
-.q h3 { font-size: 1.02rem; font-weight: 600; margin-bottom: 8px; }
-.row { display: flex; align-items: center; gap: 12px; margin-top: 6px; }
-.span { flex: 0 1 calc(var(--w) * .84); height: 18px; min-width: 0; }
-.dim { position: relative; height: 18px; width: 100%; border-inline: 1.5px solid var(--line); transform-origin: left; }
-.dim::after { content: ""; position: absolute; left: 10px; right: 10px; top: 50%; height: 0; border-top: 2px solid var(--line); }
-.dim::before { content: ""; position: absolute; left: 1px; top: 4px; width: 0; height: 0; border: 5px solid transparent; border-left: 0; border-right: 9px solid var(--line); }
-.dim.hit { border-color: var(--red); }
-.dim.hit::after { border-top: 3px solid var(--red); }
-.dim.hit::before { border-right-color: var(--red); }
-.val { flex: none; font: .82rem var(--mono); text-align: left; font-variant-numeric: tabular-nums; color: var(--ink2); }
-.val b { color: var(--red); font-weight: 700; }
-.js .dim { transform: scaleX(0); }
-.js .in .dim { transform: scaleX(1); transition: transform .9s cubic-bezier(.16, 1, .3, 1); }
-.js .in .q:nth-child(2) .dim { transition-delay: .08s; }
-.js .in .q:nth-child(3) .dim { transition-delay: .16s; }
-.js .in .q:nth-child(4) .dim { transition-delay: .24s; }
-.js .in .q:nth-child(5) .dim { transition-delay: .32s; }
-.axis { position: relative; height: 34px; border-top: 1.5px solid var(--line); margin-top: -10px; }
-.axis .tick { position: absolute; top: 0; padding-top: 12px; transform: translateX(-50%); font: .72rem var(--mono); color: var(--ink3); }
-.axis .tick::before { content: ""; position: absolute; top: 0; left: 50%; height: 8px; border-left: 1.5px solid var(--line); }
-.axis .unit { position: absolute; right: 0; top: 12px; font: .72rem var(--mono); color: var(--ink3); }
-.legend { display: flex; flex-wrap: wrap; gap: 8px 22px; font-size: .85rem; color: var(--ink2); }
-.legend i { display: inline-block; width: 22px; border-top: 3px solid var(--line); vertical-align: middle; margin-right: 8px; }
-.legend i.hit { border-color: var(--red); }
-.note { margin-top: 4px; font-size: .86rem; color: var(--ink3); max-width: 52em; }
-
-.views { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 28px; padding-bottom: 12px; align-items: start; }
+/* features and setup */
+.ways { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 48px; margin-top: 36px; align-items: start; }
+h3 { font-size: 18px; font-weight: 600; }
+.ways h3 { margin-bottom: 12px; }
 .table-wrap { overflow-x: auto; }
-table { width: 100%; border-collapse: collapse; font-size: .92rem; }
-th, td { text-align: left; padding: 9px 14px; border-top: 1px solid var(--line); vertical-align: top; }
-thead th { background: var(--well); border-top: 0; font-weight: 600; }
-td:first-child { width: 3.2em; color: var(--ink3); }
-td.mono { color: var(--ink); white-space: nowrap; }
-.shots { display: grid; }
-.shots figure { margin: 0; }
-.shots figure + figure { border-top: 1.5px solid var(--line); }
+table { border-collapse: collapse; font-size: 16px; }
+th, td { text-align: left; padding: 5px 24px 5px 0; vertical-align: top; }
+th { color: var(--mute); font-weight: 400; }
+td code { font-size: 14px; white-space: nowrap; }
+.feats { margin-top: 40px; }
+.feats table { width: 100%; }
+.feats td:first-child { width: 30%; min-width: 230px; font-weight: 600; }
+.feats td { padding-top: 9px; padding-bottom: 9px; }
+.ways pre { font-size: 14px; line-height: 24px; overflow-x: auto; }
+.ways pre + p { margin-top: 12px; font-size: 16px; color: var(--mute); }
+.shots { display: grid; grid-template-columns: minmax(0, 1fr); gap: 32px; margin-top: 48px; }
+.shot-scroll { overflow-x: auto; border: 1px solid var(--line); border-radius: 8px; }
 .shots img { display: block; width: 100%; height: auto; }
-.shots figcaption { padding: 8px 12px; font-size: .78rem; color: var(--ink3); border-top: 1.5px solid var(--line); }
-.cap-row { padding: 12px 14px; border-top: 1.5px solid var(--line); font-size: .9rem; color: var(--ink2); }
-.views .wide { grid-column: 1 / -1; }
-.notes ol { margin: 0; padding: 14px 18px 16px 40px; display: grid; gap: 6px; font-size: .92rem; color: var(--ink2); }
-.notes li::marker { color: var(--red); font-weight: 700; }
-.notes pre { margin: 6px 0 0; padding: 10px 12px; background: var(--code-bg); color: var(--code-ink); font-size: .8rem; line-height: 1.7; overflow-x: auto; }
+figcaption { margin-top: 8px; max-width: 46em; font-size: 16px; color: var(--mute); }
+figcaption code { font-size: 14px; color: var(--ink); }
+.cols { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 40px 48px; margin-top: 36px; }
+.cols ul { padding: 0; margin-top: 10px; list-style: none; font-size: 16px; color: var(--mute); }
+.cols li { padding: 2px 0; }
+.cols p { margin-top: 10px; font-size: 16px; color: var(--mute); }
 
-/* title block, always in flow below the content, bottom right */
-.tb { position: relative; z-index: 1; margin: 28px 0 0 auto; width: min(480px, 100%); display: grid; grid-template-columns: 1.6fr 1fr 1fr; border: 1.5px solid var(--line); background: var(--ground); }
-.tb div { padding: 6px 10px; border: .75px solid var(--line); font-size: .74rem; line-height: 1.3; }
-.tb b { display: block; font-weight: 500; font-size: .72rem; letter-spacing: .1em; text-transform: uppercase; color: var(--ink3); }
-.tb .t { grid-column: 1 / -1; font-size: 1.15rem; font-weight: 600; letter-spacing: .02em; padding: 8px 10px; }
+footer { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 4px 24px; padding: 26px 0 40px; border-top: 1px solid var(--line); color: var(--mute); font-size: 16px; }
 
-footer { width: min(1240px, 100% - 32px); margin: 0 auto 40px; display: flex; flex-wrap: wrap; justify-content: space-between; gap: 8px 24px; color: var(--ink3); font-size: .86rem; }
-
-@media (max-width: 980px) {
-  .hero, .views { grid-template-columns: minmax(0, 1fr); gap: 30px; }
-  .views .wide { grid-column: auto; }
+/* motion */
+@keyframes swipe { from { background-size: 0 var(--mh, 100%); color: var(--from, var(--mute)); } }
+@media (prefers-reduced-motion: no-preference) {
+  h1 .hl { --from: var(--ink); animation: swipe .4s var(--swipe) .3s backwards; }
+  .on .t { animation: swipe .42s var(--swipe) var(--d, 0s) backwards; }
 }
-@media (max-width: 720px) {
-  .sheet { padding: 28px 18px 20px; width: calc(100% - 16px); margin: 8px auto; }
-  .zones, .rows { display: none; }
-  .btn.fill { font-size: .78rem; padding: 0 12px; }
-  nav a { padding: 8px 8px; font-size: .78rem; letter-spacing: .04em; }
-  .axis { display: none; }
-  .gsvg-d { display: none; }
-  .gsvg-m { display: block; }
-  .gsvg-m text { font-size: 13px; }
-  .shots { overflow-x: auto; }
-  .shots figure { min-width: 900px; }
-  .tb { grid-template-columns: 1fr 1fr; }
-  .tb .t, .tb div:last-child { grid-column: 1 / -1; }
+@media (prefers-reduced-motion: reduce) { html { scroll-behavior: auto; } }
+@media (max-width: 960px) {
+  .hero { grid-template-columns: minmax(0, 1fr); gap: 44px; padding: 32px 0 64px; }
+  h1 { font-size: clamp(40px, 13.4vw, 84px); }
+  .ways { grid-template-columns: minmax(0, 1fr); gap: 36px; }
+  .cols { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
-@media (prefers-reduced-motion: reduce) {
-  html { scroll-behavior: auto; }
-  .js .dim, .js .in .dim { transform: none; transition: none; }
-  .js .gsvg .edge, .js .in .gsvg .edge { stroke-dashoffset: 0; transition: none; }
-  .js .gsvg .node, .js .in .gsvg .node { opacity: 1; transition: none; }
-  .btn { transition: none; }
+@media (max-width: 600px) {
+  .wrap { width: calc(100% - 32px); }
+  body { font-size: 17px; }
+  .lede { font-size: 19px; }
+  section { padding: 52px 0; }
+  .btn.copy { font-size: 14px; padding: 0 12px; gap: 7px; }
+  .file { font-size: 13px; line-height: 20px; }
+  .file li { min-height: 20px; padding-left: 2.6em; }
+  .fname, .out { font-size: 13px; line-height: 18px; }
+  .tabs button { min-height: 44px; }
+  nav a { min-height: 44px; display: inline-flex; align-items: center; }
+  .dims { --reach: .5; }
+  .feats thead { display: none; }
+  .feats tr, .feats td { display: block; width: auto; padding: 0; }
+  .feats tr + tr { margin-top: 18px; }
+  .feats td code { white-space: normal; overflow-wrap: anywhere; }
+  .cols { grid-template-columns: minmax(0, 1fr); gap: 28px; }
+  .shot-scroll { overflow-x: visible; border: none; }
+  .shot-scroll img { min-width: 0; width: 100%; }
 }
 </style>
 </head>
 <body>
-<script>document.documentElement.classList.add('js')</script>
+<a href="#top" style="position:absolute;left:-9999px;top:0;padding:8px;background:var(--mark);color:var(--on-mark);z-index:100" onfocus="this.style.left='0'" onblur="this.style.left='-9999px'">Skip to content</a>
+<div class="wrap" id="top">
 
-<!-- Sheet 1 -->
-<div class="sheet" id="top">
-  <div class="zones top" aria-hidden="true"><span>A</span><span>B</span><span>C</span><span>D</span><span>E</span><span>F</span><span>G</span><span>H</span></div>
-  <div class="rows" aria-hidden="true"><span>1</span><span>2</span><span>3</span><span>4</span></div>
-
-  <div class="bar">
+  <header>
     <a class="brand" href="#top">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="4" y="8" width="16" height="11" rx="3"/><path d="M12 8V5"/><circle cx="12" cy="4" r="1"/><path d="M9 13v1.5M15 13v1.5"/><path d="M2 13v3M22 13v3"/></svg>
       robotframework-mind
     </a>
     <nav aria-label="Main">
-      <a href="#tokens">Tokens</a><a href="#ways">CLI and app</a><a href="https://github.com/ai94iq/robotframework-mind">GitHub</a><a href="https://pypi.org/project/robotframework-mind/">PyPI</a>
+      <a href="#reading">Reading load</a><a href="#commands">Commands</a><a href="#get-started">Get started</a><span style="color:var(--mute)">|</span><a href="https://github.com/ai94iq/robotframework-mind">GitHub</a><a href="https://pypi.org/project/robotframework-mind/">PyPI</a>
     </nav>
-  </div>
+  </header>
 
-  <div class="hero">
-    <div>
-      <h1>Ask the repo. Get a <span class="red">line.</span></h1>
-      <p class="lede">Exact lookups over Robot Framework test repos: one <span class="mono">file:line</span> per hit, so people and agents stop reading whole suites.</p>
-      <div class="actions">
-        <button class="btn fill" type="button" data-copy="pip install robotframework-mind[gui]">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V6a2 2 0 0 1 2-2h9"/></svg>
-          pip install robotframework-mind[gui]
-        </button>
-        <a class="btn" href="https://github.com/ai94iq/robotframework-mind/releases/latest">Download the app</a>
+  <main>
+    <div class="hero">
+      <div>
+        <h1>Ask the repo. Get a <mark class="hl">line.</mark></h1>
+        <p class="lede">Exact lookups over Robot Framework test repos: one <code>file:line</code> per hit, so people and agents stop reading whole suites.</p>
+        <div class="actions">
+          <button class="btn copy" type="button" data-copy="pip install robotframework-mind[gui]">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V6a2 2 0 0 1 2-2h9"/></svg>
+            pip install robotframework-mind[gui]
+          </button>
+          <a class="btn" href="https://github.com/ai94iq/robotframework-mind/releases/latest">Download the app</a>
+        </div>
+        <p class="copied" role="status" aria-live="polite"></p>
       </div>
-      <p class="copied" role="status" aria-live="polite"></p>
-    </div>
-    <div>
-      <div class="detail">
-        <div class="dhead caps"><span>Detail A</span><span>Sample repo, real output</span></div>
-<pre><span class="d">$</span> python -m robot_mind --root . ticket PROJ-2120
-test  Change Zone NEW Lists Zones  <b>tests/cases.robot:6</b>
-      <span class="d">[bug:PROJ-2120 role:role_team_lead op:GET /api/zones/list]</span>
 
-<span class="d">$</span> python -m robot_mind --root . callers "Open Cases Page"
-test  Change Zone NEW Lists Zones  <b>tests/cases.robot:9</b>
-test  Cases Page Opens For QC      <b>tests/cases.robot:13</b></pre>
-      </div>
-      <ul class="callouts">
-        <li><span class="n">1</span> the command, run from the repo's own venv</li>
-        <li><span class="n">2</span> the file and line, one per hit</li>
-        <li><span class="n">3</span> tags and endpoint, no suite dump</li>
-      </ul>
-    </div>
-  </div>
-
-  <div class="detail graph" id="graph">
-    <div class="dhead caps"><span>Detail B: a call graph, drawn</span><span>Sample repos</span></div>
-    <div class="gwrap">
-      <svg class="gsvg gsvg-d" viewBox="0 0 1000 380" role="img" aria-label="Graph of the keyword Login As in the middle, linked to six keywords and tests from the API repo and four from the web repo">
-        <circle class="ring" cx="500" cy="190" r="64"/>
-        <g class="edge-set">
-          <path class="edge e-api" pathLength="1" d="M500 190 L262 52"/>
-          <path class="edge e-api" pathLength="1" d="M500 190 L132 122"/>
-          <path class="edge e-api" pathLength="1" d="M500 190 L92 204"/>
-          <path class="edge e-api" pathLength="1" d="M500 190 L152 288"/>
-          <path class="edge e-api" pathLength="1" d="M500 190 L272 338"/>
-          <path class="edge e-api" pathLength="1" d="M500 190 L372 262"/>
-          <path class="edge e-web" pathLength="1" d="M500 190 L762 62"/>
-          <path class="edge e-web" pathLength="1" d="M500 190 L882 142"/>
-          <path class="edge e-web" pathLength="1" d="M500 190 L882 242"/>
-          <path class="edge e-web" pathLength="1" d="M500 190 L762 322"/>
-        </g>
-        <g class="node">
-          <circle class="n-api" cx="262" cy="52" r="7"/><text x="250" y="44" text-anchor="end">Cancel Order</text>
-          <circle class="n-api" cx="132" cy="122" r="7"/><text x="120" y="114" text-anchor="end">Open Cart</text>
-          <circle class="n-api" cx="92" cy="204" r="7"/><text x="92" y="228" text-anchor="middle">Refund Order</text>
-          <circle class="n-api" cx="152" cy="288" r="7"/><text x="140" y="312" text-anchor="end">${LOGIN_URL}</text>
-          <circle class="n-api" cx="272" cy="338" r="7"/><text x="260" y="362" text-anchor="end">Place Order</text>
-          <circle class="n-api" cx="372" cy="262" r="7"/><text x="372" y="286" text-anchor="middle">Check Status</text>
-          <circle class="n-web" cx="762" cy="62" r="7"/><text x="776" y="54">Web Open Cart</text>
-          <circle class="n-web" cx="882" cy="142" r="7"/><text x="882" y="124" text-anchor="middle">Web Refund Order</text>
-          <circle class="n-web" cx="882" cy="242" r="7"/><text x="882" y="270" text-anchor="middle">Web Cancel Order</text>
-          <circle class="n-web" cx="762" cy="322" r="7"/><text x="776" y="346">Web Place Order</text>
-          <circle class="core" cx="500" cy="190" r="14"/>
-          <text class="c" x="500" y="150" text-anchor="middle">Login As</text>
-          <text class="sub" x="500" y="236" text-anchor="middle">keyword</text>
-        </g>
-      </svg>
-      <svg class="gsvg gsvg-m" viewBox="0 0 360 300" role="img" aria-label="Graph of the keyword Login As in the middle, linked to six keywords and tests from the API repo on the left and four from the web repo on the right">
-        <circle class="ring" cx="180" cy="160" r="40"/>
-        <g class="edge-set">
-          <path class="edge e-api" pathLength="1" d="M180 160 L36 70"/>
-          <path class="edge e-api" pathLength="1" d="M180 160 L64 118"/>
-          <path class="edge e-api" pathLength="1" d="M180 160 L30 168"/>
-          <path class="edge e-api" pathLength="1" d="M180 160 L64 222"/>
-          <path class="edge e-api" pathLength="1" d="M180 160 L100 272"/>
-          <path class="edge e-api" pathLength="1" d="M180 160 L108 190"/>
-          <path class="edge e-web" pathLength="1" d="M180 160 L324 76"/>
-          <path class="edge e-web" pathLength="1" d="M180 160 L300 140"/>
-          <path class="edge e-web" pathLength="1" d="M180 160 L326 214"/>
-          <path class="edge e-web" pathLength="1" d="M180 160 L270 276"/>
-        </g>
-        <g class="node">
-          <circle class="n-api" cx="36" cy="70" r="6"/><circle class="n-api" cx="64" cy="118" r="6"/><circle class="n-api" cx="30" cy="168" r="6"/>
-          <circle class="n-api" cx="64" cy="222" r="6"/><circle class="n-api" cx="100" cy="272" r="6"/><circle class="n-api" cx="108" cy="190" r="6"/>
-          <circle class="n-web" cx="324" cy="76" r="6"/><circle class="n-web" cx="300" cy="140" r="6"/><circle class="n-web" cx="326" cy="214" r="6"/><circle class="n-web" cx="270" cy="276" r="6"/>
-          <circle class="core" cx="180" cy="160" r="12"/>
-          <text class="c" x="180" y="122" text-anchor="middle">Login As</text>
-          <text x="14" y="26">shop-api-tests</text>
-          <text x="346" y="26" text-anchor="end" style="fill:var(--red)">shop-web-tests</text>
-        </g>
-      </svg>
-    </div>
-    <div class="gkey"><span><i style="background:var(--ink)"></i>shop-api-tests</span><span><i style="background:var(--red)"></i>shop-web-tests</span><span>A drawing, not a screenshot: the app's real graph is on sheet 3. Nodes are coloured by repo.</span></div>
-  </div>
-
-  <div class="tb"><div class="t">robotframework-mind</div><div><b>Sheet</b>1 of 3</div><div><b>Rev</b>0.1.5</div><div><b>Scale</b>1 hit = 1 line</div></div>
-  <div class="zones bot" aria-hidden="true"><span>A</span><span>B</span><span>C</span><span>D</span><span>E</span><span>F</span><span>G</span><span>H</span></div>
-</div>
-
-<!-- Sheet 2 -->
-<div class="sheet" id="tokens">
-  <div class="zones top" aria-hidden="true"><span>A</span><span>B</span><span>C</span><span>D</span><span>E</span><span>F</span><span>G</span><span>H</span></div>
-  <div class="rows" aria-hidden="true"><span>1</span><span>2</span><span>3</span><span>4</span></div>
-  <div class="sec-head">
-    <span class="caps">Sheet 2: reading load</span>
-    <h2>Agents stop burning tokens on searching</h2>
-    <p>Characters read to answer one question on a real API test repo of 553 files. Shorter is cheaper.</p>
-  </div>
-  <div class="legend"><span><i class="hit"></i>robotframework-mind</span><span><i></i>grep, then open the files</span><span>characters of output, log scale</span></div>
-  <div class="dims" id="chart" role="group" aria-label="Characters of output per question, robotframework-mind against grep and opening the files, log scale">
-    <div class="q"><h3>Tests for a ticket</h3>
-      <div class="row" style="--w:49.8%"><div class="span"><div class="dim hit"></div></div><div class="val"><b>1,570</b></div></div>
-      <div class="row" style="--w:66.5%"><div class="span"><div class="dim"></div></div><div class="val">18,611</div></div></div>
-    <div class="q"><h3>Where a keyword is defined</h3>
-      <div class="row" style="--w:34.6%"><div class="span"><div class="dim hit"></div></div><div class="val"><b>167</b></div></div>
-      <div class="row" style="--w:86.3%"><div class="span"><div class="dim"></div></div><div class="val">346,452</div></div></div>
-    <div class="q"><h3>Who calls that keyword</h3>
-      <div class="row" style="--w:55.0%"><div class="span"><div class="dim hit"></div></div><div class="val"><b>3,411</b></div></div>
-      <div class="row" style="--w:86.3%"><div class="span"><div class="dim"></div></div><div class="val">346,452</div></div></div>
-    <div class="q"><h3>Tests with a tag</h3>
-      <div class="row" style="--w:71.8%"><div class="span"><div class="dim hit"></div></div><div class="val"><b>41,107</b></div></div>
-      <div class="row" style="--w:79.9%"><div class="span"><div class="dim"></div></div><div class="val">136,226</div></div></div>
-    <div class="q"><h3>Where an endpoint is used</h3>
-      <div class="row" style="--w:53.9%"><div class="span"><div class="dim hit"></div></div><div class="val"><b>2,879</b></div></div>
-      <div class="row" style="--w:100%"><div class="span"><div class="dim"></div></div><div class="val">2,642,809</div></div></div>
-    <div class="axis" aria-hidden="true"><span class="tick" style="left:26.2%">100</span><span class="tick" style="left:39.2%">1K</span><span class="tick" style="left:52.3%">10K</span><span class="tick" style="left:65.4%">100K</span><span class="tick" style="left:78.5%">1M</span><span class="unit">characters, log scale</span></div>
-  </div>
-  <p class="note"><b>Note 1.</b> Method is in the <a href="https://github.com/ai94iq/robotframework-mind#how-it-compares">README</a>.</p>
-  <div class="tb"><div class="t">Reading load</div><div><b>Sheet</b>2 of 3</div><div><b>Rev</b>0.1.5</div><div><b>Scale</b>log, chars</div></div>
-  <div class="zones bot" aria-hidden="true"><span>A</span><span>B</span><span>C</span><span>D</span><span>E</span><span>F</span><span>G</span><span>H</span></div>
-</div>
-
-<!-- Sheet 3 -->
-<div class="sheet" id="ways">
-  <div class="zones top" aria-hidden="true"><span>A</span><span>B</span><span>C</span><span>D</span><span>E</span><span>F</span><span>G</span><span>H</span></div>
-  <div class="rows" aria-hidden="true"><span>1</span><span>2</span><span>3</span><span>4</span></div>
-  <div class="sec-head"><span class="caps">Sheet 3: assembly</span><h2>Two views, one engine</h2></div>
-  <div class="views">
-      <div class="detail">
-        <div class="dhead caps"><span>View A: command line, for agents and scripts</span></div>
-        <div class="table-wrap"><table>
-          <thead><tr><th>Item</th><th>Command</th><th>Returns</th></tr></thead>
-          <tbody>
-            <tr><td>1</td><td class="mono">ticket KEY</td><td>tests that cover it</td></tr>
-            <tr><td>2</td><td class="mono">kw NAME</td><td>where it is defined</td></tr>
-            <tr><td>3</td><td class="mono">callers NAME</td><td>every call site</td></tr>
-            <tr><td>4</td><td class="mono">tag TAG</td><td>tests with the tag</td></tr>
-            <tr><td>5</td><td class="mono">find TEXT</td><td>endpoint, variable, value</td></tr>
-          </tbody></table></div>
-      </div>
-      <div class="detail notes">
-        <div class="dhead caps"><span>General notes</span></div>
-        <ol>
-          <li>Install, then start the app:<pre>pip install robotframework-mind[gui]
-python -m robot_mind_app</pre></li>
-          <li>Windows, Mac and Linux builds: <a href="https://github.com/ai94iq/robotframework-mind/releases/latest">releases</a> (unsigned).</li>
+      <div id="flow">
+        <div class="tabs" role="group" aria-label="Pick a step">
+          <button type="button" data-step="ticket" aria-pressed="true">ticket</button>
+          <button type="button" data-step="callers" aria-pressed="false">callers</button>
+        </div>
+        <p class="fname">tests/cases.robot | ticket PROJ-2120</p>
+        <ol class="file" id="yaml" aria-label="Sample repo output">
+          <li class="on" style="--d:.75s"><span class="t">$ python -m robot_mind --root . ticket PROJ-2120</span></li>
+          <li><span class="t">test  Change Zone NEW Lists Zones</span></li>
+          <li class="on" style="--d:.95s"><span class="t">      tests/cases.robot:6</span></li>
+          <li><span class="t">      [bug:PROJ-2120 role:role_team_lead op:GET /api/zones/list]</span></li>
         </ol>
-      </div>
-    <div class="detail wide">
-      <div class="dhead caps"><span>View B: desktop app, for people</span><span>Sample repos</span></div>
-      <div class="shots">
-        <figure><picture><source media="(prefers-color-scheme: dark)" srcset="screenshots/table-dark.png"><img src="screenshots/table.png" width="2400" height="1539" loading="lazy" alt="The app listing 18 tests tagged role:shopper across three repos, with kind, name, file and line, and tags"></picture><figcaption>Table</figcaption></figure>
-        <figure><picture><source media="(prefers-color-scheme: dark)" srcset="screenshots/graph-dark.png"><img src="screenshots/graph.png" width="2400" height="1324" loading="lazy" alt="The app showing a search for /api/orders as a graph of 31 nodes, coloured by repo"></picture><figcaption>Graph</figcaption></figure>
+        <p class="fname">tests/cases.robot | callers "Open Cases Page"</p>
+        <ol class="file" id="robot" aria-label="Callers output">
+          <li class="on" style="--d:1.15s"><span class="t">test  Change Zone NEW Lists Zones  tests/cases.robot:9</span></li>
+          <li class="on" style="--d:1.35s"><span class="t">test  Cases Page Opens For QC      tests/cases.robot:13</span></li>
+        </ol>
+        <pre class="out">One file:line per hit. No suite dump.</pre>
+        <p class="sr" id="said" role="status"></p>
       </div>
     </div>
-  </div>
-  <div class="tb"><div class="t">Assembly</div><div><b>Sheet</b>3 of 3</div><div><b>Rev</b>0.1.5</div><div><b>Scale</b>1:1</div></div>
-  <div class="zones bot" aria-hidden="true"><span>A</span><span>B</span><span>C</span><span>D</span><span>E</span><span>F</span><span>G</span><span>H</span></div>
-</div>
 
-<footer>
-  <span>Credits: the parsing approach follows graphify, see <a href="https://github.com/ai94iq/robotframework-mind/blob/main/NOTICE">NOTICE</a>.</span>
-  <span><a href="https://github.com/ai94iq/robotframework-mind">GitHub</a> &middot; <a href="https://pypi.org/project/robotframework-mind/">PyPI</a></span>
-</footer>
+    <section id="reading">
+      <h2>Agents stop burning tokens on <mark class="hl">searching.</mark></h2>
+      <p class="sub">Characters read to answer one question on a real API test repo of 553 files. Shorter output is cheaper.</p>
+      <div class="legend"><span><i class="hit"></i>robotframework-mind</span><span><i></i>grep, then open the files</span><span>characters of output, log scale</span></div>
+      <div class="dims" id="chart" role="group" aria-label="Characters of output per question, log scale">
+        <div class="q"><div class="qh"><h3>Tests for a ticket</h3><span>12x</span></div>
+          <div class="row" style="--w:49.8%;--i:0"><div class="bar hit"></div><div class="val">1,570</div></div>
+          <div class="row" style="--w:66.5%;--i:1"><div class="bar"></div><div class="val">18,611</div></div></div>
+        <div class="q"><div class="qh"><h3>Where a keyword is defined</h3><span>2073x</span></div>
+          <div class="row" style="--w:34.6%;--i:2"><div class="bar hit"></div><div class="val">167</div></div>
+          <div class="row" style="--w:86.3%;--i:3"><div class="bar"></div><div class="val">346,452</div></div></div>
+        <div class="q"><div class="qh"><h3>Who calls that keyword</h3><span>102x</span></div>
+          <div class="row" style="--w:55.0%;--i:4"><div class="bar hit"></div><div class="val">3,411</div></div>
+          <div class="row" style="--w:86.3%;--i:5"><div class="bar"></div><div class="val">346,452</div></div></div>
+        <div class="q"><div class="qh"><h3>Tests with a tag</h3><span>3.3x</span></div>
+          <div class="row" style="--w:71.8%;--i:6"><div class="bar hit"></div><div class="val">41,107</div></div>
+          <div class="row" style="--w:79.9%;--i:7"><div class="bar"></div><div class="val">136,226</div></div></div>
+        <div class="q"><div class="qh"><h3>Where an endpoint is used</h3><span>918x</span></div>
+          <div class="row" style="--w:53.9%;--i:8"><div class="bar hit"></div><div class="val">2,879</div></div>
+          <div class="row" style="--w:100%;--i:9"><div class="bar"></div><div class="val">2,642,809</div></div></div>
+      </div>
+      <p class="note">Method is in the <a href="https://github.com/ai94iq/robotframework-mind#how-it-compares">README</a>.</p>
+    </section>
+
+    <section id="commands">
+      <h2>Two views. <mark class="hl">One engine.</mark></h2>
+      <p class="sub">Same index, for agents and for people.</p>
+      <div class="ways">
+        <div>
+          <h3>Command line</h3>
+          <div class="table-wrap"><table>
+            <thead><tr><th>Command</th><th>Returns</th></tr></thead>
+            <tbody>
+              <tr><td><code>ticket KEY</code></td><td>tests that cover it</td></tr>
+              <tr><td><code>kw NAME</code></td><td>where it is defined</td></tr>
+              <tr><td><code>callers NAME</code></td><td>every call site</td></tr>
+              <tr><td><code>tag TAG</code></td><td>tests with the tag</td></tr>
+              <tr><td><code>find TEXT</code></td><td>endpoint, variable, value</td></tr>
+            </tbody></table></div>
+        </div>
+        <div>
+          <h3>Install and run</h3>
+          <pre>pip install robotframework-mind[gui]
+python -m robot_mind_app</pre>
+          <p>Windows, Mac and Linux builds: <a href="https://github.com/ai94iq/robotframework-mind/releases/latest">releases</a> (unsigned, no budget for signing). On macOS: <code>xattr -d com.apple.quarantine</code> on the app, or build from source.</p>
+        </div>
+      </div>
+      <div class="shots">
+        <figure>
+          <div class="shot-scroll"><picture><source media="(prefers-color-scheme: dark)" srcset="screenshots/table-dark.png"><img src="screenshots/table.png" width="2400" height="1539" loading="lazy" alt="The app listing 18 tests tagged role:shopper across three repos, with kind, name, file and line, and tags"></picture></div>
+          <figcaption>Table view: 18 tests tagged <code>role:shopper</code> across three repos, with kind, name, file and line.</figcaption>
+        </figure>
+        <figure>
+          <div class="shot-scroll"><picture><source media="(prefers-color-scheme: dark)" srcset="screenshots/graph-dark.png"><img src="screenshots/graph.png" width="2400" height="1324" loading="lazy" alt="The app showing a search for /api/orders as a graph of 31 nodes, coloured by repo"></picture></div>
+          <figcaption>Graph view: a search for <code>/api/orders</code> as a graph of 31 nodes, coloured by repo.</figcaption>
+        </figure>
+      </div>
+    </section>
+
+    <section id="get-started">
+      <h2>What you need, and where it runs.</h2>
+      <div class="cols">
+        <div><h3>You need</h3><ul><li>Python 3.10 or newer</li><li>robotframework on PATH</li><li>A Robot Framework test repo</li></ul></div>
+        <div><h3>Works with</h3><ul><li>Any .robot or .resource file</li><li>JSON files under docs/</li><li>Windows, Linux and macOS</li></ul></div>
+        <div><h3>Learn more</h3><p>Every command, flag and output shape is in the <a href="https://github.com/ai94iq/robotframework-mind#readme">README</a>, and the full list of changes is in the <a href="https://github.com/ai94iq/robotframework-mind/blob/main/CHANGELOG.md">changelog</a>.</p></div>
+      </div>
+    </section>
+  </main>
+
+  <footer>
+    <span>Credits: the parsing approach follows graphify, see <a href="https://github.com/ai94iq/robotframework-mind/blob/main/NOTICE">NOTICE</a>.</span>
+    <span><a href="https://github.com/ai94iq/robotframework-mind">Source</a>, <a href="https://github.com/ai94iq/robotframework-mind/issues">Issues</a>, <a href="https://github.com/ai94iq/robotframework-mind/blob/main/CHANGELOG.md">Changelog</a>, <a href="https://pypi.org/project/robotframework-mind/">PyPI</a></span>
+  </footer>
+</div>
 
 <script>
 (function () {
-  ['chart', 'graph'].forEach(function (id) {
-    var el = document.getElementById(id);
-    if (!el) return;
-    if ('IntersectionObserver' in window) {
-      var io = new IntersectionObserver(function (es) {
-        es.forEach(function (e) { if (e.isIntersecting) { el.classList.add('in'); io.disconnect(); } });
-      }, { threshold: 0.2 });
-      io.observe(el);
-    } else { el.classList.add('in'); }
-  });
+  var chart = document.getElementById('chart');
+  if ('IntersectionObserver' in window) {
+    var io = new IntersectionObserver(function (es) {
+      es.forEach(function (e) { if (e.isIntersecting) { chart.classList.add('in'); io.disconnect(); } });
+    }, { threshold: 0.2 });
+    io.observe(chart);
+  } else { chart.classList.add('in'); }
 
   var status = document.querySelector('.copied');
   document.querySelectorAll('[data-copy]').forEach(function (b) {
     b.addEventListener('click', function () {
-      var done = function () { status.textContent = 'Copied. Paste it in the repo’s venv.'; setTimeout(function () { status.textContent = ''; }, 3500); };
+      var done = function () { status.textContent = 'Copied.'; setTimeout(function () { status.textContent = ''; }, 3500); };
       var fail = function () { status.textContent = 'Select the text and copy it.'; };
       if (navigator.clipboard) { navigator.clipboard.writeText(b.getAttribute('data-copy')).then(done, fail); } else { fail(); }
+    });
+  });
+
+  var STEPS = {
+    ticket: { yaml: [1, 3], robot: [2, 3], say: 'ticket KEY prints one file:line per hit' },
+    callers: { yaml: [4], robot: [4, 5], say: 'callers NAME prints every call site' }
+  };
+  var yaml = document.getElementById('yaml');
+  var robot = document.getElementById('robot');
+  var said = document.getElementById('said');
+  var keys = document.querySelectorAll('[data-step]');
+  function mark(list, lines, delay) {
+    lines.forEach(function (n) {
+      var li = list.children[n - 1];
+      if (!li) return;
+      li.style.setProperty('--d', delay + 'ms');
+      li.classList.add('on');
+    });
+  }
+  keys.forEach(function (k) {
+    k.addEventListener('click', function () {
+      var step = STEPS[k.getAttribute('data-step')];
+      keys.forEach(function (o) { o.setAttribute('aria-pressed', String(o === k)); });
+      document.querySelectorAll('.on').forEach(function (li) { li.classList.remove('on'); });
+      void yaml.offsetWidth;
+      mark(yaml, step.yaml, 0);
+      mark(robot, step.robot, 220);
+      said.textContent = step.say;
     });
   });
 })();
